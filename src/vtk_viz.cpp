@@ -183,7 +183,7 @@ void SurrogateVtkWriter::write_points(ofstream& vtk_file)
 {
 
   vtk_file << "POINTS " << surrogate_.n_pins_ * n_points_ << " float\n";
-  for (size_t pin = 0; pin < surrogate_.n_pins_; pin++) {
+  for (gsl::index pin = 0; pin < surrogate_.n_pins_; pin++) {
     // translate pin template to pin center
     xtensor<double, 1> pnts =
       points_for_pin(surrogate_.pin_centers_(pin, 0), surrogate_.pin_centers_(pin, 1));
@@ -200,13 +200,13 @@ void SurrogateVtkWriter::write_element_connectivity(ofstream& vtk_file)
   vtk_file << "\nCELLS " << surrogate_.n_pins_ * n_mesh_elements_ << " "
            << surrogate_.n_pins_ * n_entries_ << "\n";
   // pin loop
-  for (size_t pin = 0; pin < surrogate_.n_pins_; pin++) {
+  for (gsl::index pin = 0; pin < surrogate_.n_pins_; pin++) {
     // get the connectivity for a given pin, using an
     // offset to get the connectivity values correct
     xtensor<int, 1> conn = conn_for_pin(pin * n_points_);
     // write the connectivity values to file for this pin
     for (auto val = conn.cbegin(); val != conn.cend(); val += CONN_STRIDE_) {
-      for (size_t i = 0; i < CONN_STRIDE_; i++) {
+      for (gsl::index i = 0; i < CONN_STRIDE_; i++) {
         auto v = *(val + i);
         // mask out any negative connectivity values
         if (v != INVALID_CONN_) {
@@ -223,7 +223,7 @@ void SurrogateVtkWriter::write_element_types(ofstream& vtk_file)
   // write number of cell type entries
   vtk_file << "\nCELL_TYPES " << surrogate_.n_pins_ * n_mesh_elements_ << "\n";
   // pin loop
-  for (size_t pin = 0; pin < surrogate_.n_pins_; pin++) {
+  for (gsl::index pin = 0; pin < surrogate_.n_pins_; pin++) {
     // write the template for each pin
     for (auto v : types_) {
       vtk_file << v << "\n";
@@ -247,13 +247,13 @@ void SurrogateVtkWriter::write_data(ofstream& vtk_file)
     vtk_file << "SCALARS TEMPERATURE double 1\n";
     vtk_file << "LOOKUP_TABLE default\n";
     // write data for each pin
-    for (size_t pin = 0; pin < surrogate_.n_pins_; pin++) {
+    for (gsl::index pin = 0; pin < surrogate_.n_pins_; pin++) {
       // write data for specified regions
       if (VizRegionType::fuel == regions_out_ || VizRegionType::all == regions_out_) {
         // write all fuel data first
-        for (size_t i = 0; i < n_axial_sections_; i++) {
-          for (size_t j = 0; j < n_radial_fuel_sections_; j++) {
-            for (size_t k = 0; k < radial_res_; k++) {
+        for (gsl::index i = 0; i < n_axial_sections_; i++) {
+          for (gsl::index j = 0; j < n_radial_fuel_sections_; j++) {
+            for (gsl::index k = 0; k < radial_res_; k++) {
               vtk_file << surrogate_.solid_temperature(pin, i, j) << "\n";
             }
           }
@@ -262,9 +262,9 @@ void SurrogateVtkWriter::write_data(ofstream& vtk_file)
 
       // then write cladding data
       if (VizRegionType::clad == regions_out_ || VizRegionType::all == regions_out_) {
-        for (size_t i = 0; i < n_axial_sections_; i++) {
-          for (size_t j = 0; j < n_radial_clad_sections_; j++) {
-            for (size_t k = 0; k < radial_res_; k++) {
+        for (gsl::index i = 0; i < n_axial_sections_; i++) {
+          for (gsl::index j = 0; j < n_radial_clad_sections_; j++) {
+            for (gsl::index k = 0; k < radial_res_; k++) {
               vtk_file << surrogate_.solid_temperature(pin, i, j + n_radial_fuel_sections_)
                        << "\n";
             }
@@ -279,12 +279,12 @@ void SurrogateVtkWriter::write_data(ofstream& vtk_file)
     // source data
     vtk_file << "SCALARS SOURCE double 1\n";
     vtk_file << "LOOKUP_TABLE default\n";
-    for (size_t pin = 0; pin < surrogate_.n_pins_; pin++) {
+    for (gsl::index pin = 0; pin < surrogate_.n_pins_; pin++) {
       // write all fuel data first
       if (VizRegionType::fuel == regions_out_ || VizRegionType::all == regions_out_) {
-        for (size_t i = 0; i < n_axial_sections_; i++) {
-          for (size_t j = 0; j < n_radial_fuel_sections_; j++) {
-            for (size_t k = 0; k < radial_res_; k++) {
+        for (gsl::index i = 0; i < n_axial_sections_; i++) {
+          for (gsl::index j = 0; j < n_radial_fuel_sections_; j++) {
+            for (gsl::index k = 0; k < radial_res_; k++) {
               vtk_file << surrogate_.source_(pin, i, j) << "\n";
             }
           }
@@ -293,9 +293,9 @@ void SurrogateVtkWriter::write_data(ofstream& vtk_file)
 
       // then write the cladding data
       if (VizRegionType::clad == regions_out_ || VizRegionType::all == regions_out_) {
-        for (size_t i = 0; i < n_axial_sections_; i++) {
-          for (size_t j = 0; j < n_radial_clad_sections_; j++) {
-            for (size_t k = 0; k < radial_res_; k++) {
+        for (gsl::index i = 0; i < n_axial_sections_; i++) {
+          for (gsl::index j = 0; j < n_radial_clad_sections_; j++) {
+            for (gsl::index k = 0; k < radial_res_; k++) {
               vtk_file << surrogate_.source_(pin, i, j + n_radial_fuel_sections_) << "\n";
             }
           }
@@ -351,7 +351,7 @@ xtensor<double, 3> SurrogateVtkWriter::fuel_points()
   xt::xarray<double> y = xt::zeros<double>({n_radial_fuel_sections_, radial_res_});
 
   // generate x/y points for each raidal section
-  for (size_t i = 0; i < n_radial_fuel_sections_; i++) {
+  for (gsl::index i = 0; i < n_radial_fuel_sections_; i++) {
     // first radius in r_grid_fuel_ is zero, start at one
     double ring_rad = surrogate_.r_grid_fuel_(i + 1);
     // create a unit ring scaled by radius
@@ -385,7 +385,7 @@ xtensor<double, 3> SurrogateVtkWriter::clad_points()
   xt::xarray<double> y = xt::zeros<double>({n_radial_clad_sections_ + 1, radial_res_});
 
   // generate x/y points for each radial ring
-  for (size_t i = 0; i < n_radial_clad_sections_ + 1; i++) {
+  for (gsl::index i = 0; i < n_radial_clad_sections_ + 1; i++) {
     double ring_rad = surrogate_.r_grid_clad_(i);
     // create a unit ring scaled by radius
     xtensor<double, 2> ring = create_ring(ring_rad, radial_res_);
@@ -447,7 +447,7 @@ xtensor<int, 1> SurrogateVtkWriter::conn_for_pin(size_t offset)
   conn_out = xt::flatten(conn_out);
   // no masked_view in this version of xtensor,
   // making do with this for now
-  for (size_t i = 0; i < mask.size(); i++) {
+  for (gsl::index i = 0; i < mask.size(); i++) {
     if (mask(i)) {
       conn_out(i) = INVALID_CONN_;
     }
@@ -493,14 +493,14 @@ xtensor<int, 4> SurrogateVtkWriter::fuel_conn()
 
   // set the other rings by shifting the initial base
   // by radial_res_ for each ring
-  for (size_t i = 1; i < n_radial_fuel_sections_; i++) {
+  for (gsl::index i = 1; i < n_radial_fuel_sections_; i++) {
     xt::view(base, i, xt::all(), xt::all()) = radial_base;
     radial_base += radial_res_;
   }
 
   // set all axial divs using the base connectivity
   // and shifting by the number of points in a plane
-  for (size_t j = 0; j < n_axial_sections_; j++) {
+  for (gsl::index j = 0; j < n_axial_sections_; j++) {
     // set layer and increment connectivity by number of points in axial div
     xt::view(cells_out, j, xt::all(), xt::all(), xt::range(1, _)) = base;
     base += fuel_points_per_plane_;
@@ -536,14 +536,14 @@ xtensor<int, 4> SurrogateVtkWriter::clad_conn()
 
   // set the other rings by shifting the initial base
   // by radial_res_ for each ring
-  for (size_t i = 0; i < n_radial_clad_sections_; i++) {
+  for (gsl::index i = 0; i < n_radial_clad_sections_; i++) {
     xt::view(base, i, xt::all(), xt::all()) = radial_base;
     radial_base += radial_res_;
   }
 
   // set all axial divs using base for the first layer and
   // shift by the number of points in a plane
-  for (size_t i = 0; i < n_axial_sections_; i++) {
+  for (gsl::index i = 0; i < n_axial_sections_; i++) {
     // set layer and increment connectivity by number of points in axial div
     xt::view(cells_out, i, xt::all(), xt::all(), xt::range(1, _)) = base;
     base += clad_points_per_plane_;

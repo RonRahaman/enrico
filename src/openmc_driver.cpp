@@ -29,7 +29,7 @@ OpenmcDriver::OpenmcDriver(MPI_Comm comm)
     int type;
     int32_t* indices;
     int32_t n;
-    err_chk(openmc_cell_get_fill(i, &type, &indices, &n));
+    err_chk(openmc_cell_get_fill(gsl::narrow<int32_t>(i), &type, &indices, &n));
 
     // only check for cells filled with type FILL_MATERIAL (evaluated to '1' enum)
     if (type == openmc::FILL_MATERIAL) {
@@ -60,7 +60,8 @@ void OpenmcDriver::create_tallies(gsl::span<int32_t> materials)
 
   // Set bins for filter
   err_chk(
-    openmc_material_filter_set_bins(index_filter_, materials.size(), materials.data()));
+    openmc_material_filter_set_bins(index_filter_,
+      gsl::narrow<int32_t>(materials.size ()), materials .data()));
 
   // Create tally and assign scores/filters
   int32_t index_tally;
@@ -111,7 +112,7 @@ void OpenmcDriver::solve_step()
   err_chk(openmc_run());
 }
 
-void OpenmcDriver::write_step(int timestep, int iteration)
+void OpenmcDriver::write_step(gsl::index timestep, gsl::index iteration)
 {
   std::string filename{"openmc_t" + std::to_string(timestep) + "_i" +
                        std::to_string(iteration) + ".h5"};

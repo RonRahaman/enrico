@@ -74,7 +74,7 @@ void CoupledDriver::execute()
       if (neutronics.active()) {
         neutronics.init_step();
         neutronics.solve_step();
-        neutronics.write_step(i_timestep_, i_picard_);
+        neutronics.write_step(gsl::narrow<int>(i_timestep_), gsl::narrow<int>(i_picard_));
         neutronics.finalize_step();
       }
 
@@ -86,7 +86,7 @@ void CoupledDriver::execute()
       if (heat.active()) {
         heat.init_step();
         heat.solve_step();
-        heat.write_step(i_timestep_, i_picard_);
+        heat.write_step(gsl::narrow<int>(i_timestep_), gsl::narrow<int>(i_picard_));
         heat.finalize_step();
       }
 

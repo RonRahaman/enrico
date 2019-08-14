@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "iapws/iapws.h"
+#include "gsl/gsl"
 
 using namespace iapws;
 
@@ -185,9 +186,9 @@ find_chen_nb_htc(double heat_flux, double htc_conv, double chen_const,
 
 void
 fill_matrix(double *T, double *r_grid_fuel, double *r_grid_clad,
-            int n_fuel_rings, int n_clad_rings, double *out)
+            std::size_t n_fuel_rings, std::size_t n_clad_rings, double *out)
 {
-  int n_col = n_fuel_rings + n_clad_rings + 1;
+  auto n_col = n_fuel_rings + n_clad_rings + 1;
 
   // Compute the gap htc.
   // TODO: use the temperature on the surface of the fuel and clad rather than
@@ -217,7 +218,7 @@ fill_matrix(double *T, double *r_grid_fuel, double *r_grid_clad,
   out[n_col*1 + 0] = FD_r;   // Main diagonal
 
   // Iterate over fuel rings.
-  for (int i = 1; i < n_fuel_rings - 1; i++)
+  for (gsl::index i = 1; i < n_fuel_rings - 1; i++)
   {
     // Get the radii of the relevant grid points.
     r1 = r_grid_fuel[i-1];
@@ -291,7 +292,7 @@ fill_matrix(double *T, double *r_grid_fuel, double *r_grid_clad,
   out[n_col*2 + n_fuel_rings-1] = -FD_l;      // Lower diagonal
 
   // Iterate over clad rings.
-  for (int i = 1; i < n_clad_rings - 1; i++)
+  for (gsl::index i = 1; i < n_clad_rings - 1; i++)
   {
     // Get the radii of the relevant grid points.
     r1 = r_grid_clad[i-1];
@@ -343,10 +344,10 @@ fill_matrix(double *T, double *r_grid_fuel, double *r_grid_clad,
 //==============================================================================
 
 void
-add_dirichlet_bc(double *r_grid_fuel, double *r_grid_clad, int n_fuel_rings,
-                 int n_clad_rings, double *A)
+add_dirichlet_bc(double *r_grid_fuel, double *r_grid_clad, std::size_t n_fuel_rings,
+                 std::size_t n_clad_rings, double *A)
 {
-  int n_col = n_fuel_rings + n_clad_rings + 1;
+  auto n_col = n_fuel_rings + n_clad_rings + 1;
 
   // Compute the differencing coefficient.
   double r_mid = (r_grid_clad[n_clad_rings-1] + r_grid_clad[n_clad_rings])
@@ -367,13 +368,13 @@ add_dirichlet_bc(double *r_grid_fuel, double *r_grid_clad, int n_fuel_rings,
 //==============================================================================
 
 void
-solve_heat_system(double *A, double T_b, double *source, int n_cols, double *T)
+solve_heat_system(double *A, double T_b, double *source, std::size_t n_cols, double *T)
 {
-  int n_rings = n_cols - 1;
+  std::size_t n_rings = n_cols - 1;
 
   A[n_cols*0 + 1] /= A[n_cols*1 + 0];
   T[0] = source[0] / A[n_cols*1 + 0];
-  for (int i = 1; i < n_rings; i++)
+  for (gsl::index i = 1; i < n_rings; i++)
   {
     A[n_cols*0 + i+1] /= A[n_cols*1 + i] - A[n_cols*2 + i-1] * A[n_cols*0 + i];
     T[i] = (source[i] - A[n_cols*2 + i-1] * T[i-1])
@@ -381,7 +382,7 @@ solve_heat_system(double *A, double T_b, double *source, int n_cols, double *T)
   }
 
   T[n_rings-1] -= A[n_cols*0 + n_rings] * T_b;
-  for (int i = n_rings-2; i > -1; i--)
+  for (gsl::index i = n_rings-2; i > -1; i--)
   {
     T[i] -= A[n_cols*0 + i+1] * T[i+1];
   }
@@ -393,7 +394,7 @@ solve_heat_system(double *A, double T_b, double *source, int n_cols, double *T)
 
 void
 solve_steady_nonlin(double *source, double T_co, double *r_grid_fuel,
-                    double *r_grid_clad, int n_fuel_rings, int n_clad_rings,
+                    double *r_grid_clad, std::size_t n_fuel_rings, std::size_t n_clad_rings,
                     double tol, double *T)
 {
   // Get the number of columns in the matrix.
@@ -420,7 +421,7 @@ solve_steady_nonlin(double *source, double T_co, double *r_grid_fuel,
 
     // Compute the L2 temperature error and check convergence.
     double l2_err = 0.0;
-    for (int i = 0; i < n_fuel_rings + n_clad_rings; i++) {
+    for (gsl::index i = 0; i < n_fuel_rings + n_clad_rings; i++) {
       if (T_last_k_iter[i] != 0) {
         double rel_diff = (T[i] - T_last_k_iter[i]) / T_last_k_iter[i];
         l2_err += rel_diff * rel_diff;
@@ -430,7 +431,7 @@ solve_steady_nonlin(double *source, double T_co, double *r_grid_fuel,
     converged = l2_err < tol;
 
     // Save this temperature distribution for convergence checking.
-    for (int i = 0; i < n_fuel_rings + n_clad_rings; i++) {
+    for (gsl::index i = 0; i < n_fuel_rings + n_clad_rings; i++) {
       T_last_k_iter[i] = T[i];
     }
   }

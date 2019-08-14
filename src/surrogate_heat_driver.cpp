@@ -13,8 +13,8 @@
 
 namespace enrico {
 
-int ChannelFactory::index_ = 0;
-int RodFactory::index_ = 0;
+gsl::index ChannelFactory::index_ = 0;
+gsl::index RodFactory::index_ = 0;
 
 SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm,
                                          double pressure_bc,
@@ -90,7 +90,7 @@ SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm,
   pin_centers_.resize({n_pins_, 2});
   for (gsl::index row = 0; row < n_pins_y_; ++row) {
     for (gsl::index col = 0; col < n_pins_x_; ++col) {
-      int pin_index = row * n_pins_x_ + col;
+      auto pin_index = row * n_pins_x_ + col;
       pin_centers_(pin_index, 0) = top_left_x + col * pin_pitch_;
       pin_centers_(pin_index, 1) = top_left_y - row * pin_pitch_;
     }
@@ -188,7 +188,7 @@ void SurrogateHeatDriver::generate_arrays()
     if (i < n_fuel_rings_)
       solid_areas_(i) = M_PI * (r_grid_fuel_(i + 1) * r_grid_fuel_(i + 1) - r_grid_fuel_(i) * r_grid_fuel_(i));
     else {
-      int r = i - n_fuel_rings_;
+      auto r = i - n_fuel_rings_;
       solid_areas_(i) = M_PI * (r_grid_clad_(r + 1) * r_grid_clad_(r + 1) - r_grid_clad_(r) * r_grid_clad_(r));
     }
   }
@@ -206,7 +206,7 @@ void SurrogateHeatDriver::generate_arrays()
   fluid_mask_ = xt::concatenate(xt::xtuple(s_mask, f_mask), 0);
 }
 
-double SurrogateHeatDriver::rod_axial_node_power(const int pin, const int axial) const
+double SurrogateHeatDriver::rod_axial_node_power(gsl::index pin, gsl::index axial) const
 {
   Expects(axial < n_axial_);
 
@@ -233,8 +233,8 @@ void SurrogateHeatDriver::solve_fluid()
   // coefficient and only depends on the rod power at that axial elevation. The channel
   // powers are indexed by channel ID, axial ID
   xt::xtensor<double, 2> channel_powers({n_channels_, n_axial_}, 0.0);
-  for (int i = 0; i < n_channels_; ++i) {
-    for (int j = 0; j < n_axial_; ++j) {
+  for (gsl::index i = 0; i < n_channels_; ++i) {
+    for (gsl::index j = 0; j < n_axial_; ++j) {
       for (const auto& rod : channels_[i].rod_ids_)
         channel_powers(i, j) += 0.25 * rod_axial_node_power(rod, j);
     }
@@ -456,7 +456,7 @@ xt::xtensor<int, 1> SurrogateHeatDriver::fluid_mask() const
   return fluid_mask_;
 }
 
-void SurrogateHeatDriver::write_step(int timestep, int iteration)
+void SurrogateHeatDriver::write_step(gsl::index timestep, gsl::index iteration)
 {
   // if called, but viz isn't requested for the situation,
   // exit early - no output

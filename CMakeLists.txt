@@ -65,7 +65,7 @@ target_compile_definitions(iapws PRIVATE GSL_THROW_ON_CONTRACT_VIOLATION)
 # =============================================================================
 add_library(heat_xfer vendor/surrogates/heat_xfer_backend.cpp)
 target_include_directories(heat_xfer PUBLIC vendor/surrogates/)
-target_link_libraries(heat_xfer PUBLIC iapws)
+target_link_libraries(heat_xfer PUBLIC iapws gsl-lite)
 
 # =============================================================================
 # Build libenrico

@@ -16,20 +16,20 @@ namespace enrico {
 //! Struct containing geometric information for a flow channel
 struct Channel {
   //! Channel index
-  int index_;
+  gsl::index index_;
 
   //! Channel flow area
   double area_;
 
   //! Vector of rod IDs connected to this channel, all with a fractional perimeter
   //! in contact with the channel equal to 0.25
-  std::vector<std::size_t> rod_ids_;
+  std::vector<gsl::index> rod_ids_;
 };
 
 //! Struct containing geometry information for a cylindrical solid rod
 struct Rod {
   //! Rod index
-  int index_;
+  gsl::index index_;
 
   //! Rod cladding outer radius
   double clad_outer_radius_;
@@ -42,7 +42,7 @@ struct Rod {
 
   //! Vector of channel IDs connected to this rod, all with a fractional perimeter
   //! in contact with the rod equal to 0.25
-  std::vector<std::size_t> channel_ids_;
+  std::vector<gsl::index> channel_ids_;
 };
 
 //! Class to construct flow channels for a Cartesian lattice of pins
@@ -55,7 +55,7 @@ class ChannelFactory {
       {}
 
     //! Make a corner subchannel connected to given rods
-    Channel make_corner(const std::vector<std::size_t>& rods) const {
+    Channel make_corner(const std::vector<gsl::index>& rods) const {
       Channel c;
       c.index_ = index_++;
       c.area_ = 0.25 * interior_area_;
@@ -64,7 +64,7 @@ class ChannelFactory {
     }
 
     //! Make an edge subchannel connected to given rods
-    Channel make_edge(const std::vector<std::size_t>& rods) const {
+    Channel make_edge(const std::vector<gsl::index>& rods) const {
       Channel c;
       c.index_ = index_++;
       c.area_ = 0.5 * interior_area_;
@@ -73,7 +73,7 @@ class ChannelFactory {
     }
 
     //! Make an interior subchannel connected to given rods
-    Channel make_interior(const std::vector<std::size_t>& rods) const {
+    Channel make_interior(const std::vector<gsl::index>& rods) const {
       Channel c;
       c.index_ = index_++;
       c.area_ = interior_area_;
@@ -93,7 +93,7 @@ class ChannelFactory {
     double interior_area_;
 
     //! index of constructed channel
-    static int index_;
+    static gsl::index index_;
 };
 
 class RodFactory {
@@ -105,7 +105,7 @@ class RodFactory {
       {}
 
     //! Make a rod connected to given channels
-    Rod make_rod(const std::vector<std::size_t>& channels) const {
+    Rod make_rod(const std::vector<gsl::index>& channels) const {
       Rod r;
       r.index_ = index_++;
       r.clad_inner_radius_ = clad_inner_r_;
@@ -126,7 +126,7 @@ class RodFactory {
     double pellet_outer_r_;
 
     //! Index of constructed rod
-    static int index_;
+    static gsl::index index_;
 };
 
 /**
@@ -211,7 +211,7 @@ public:
   double heat_tol() const { return heat_tol_; }
 
   //! Write data to VTK
-  void write_step(int timestep, int iteration) final;
+  void write_step(gsl::index timestep, gsl::index iteration) final;
 
   xt::xtensor<double, 1> temperature() const final;
 
@@ -269,13 +269,13 @@ private:
   void generate_arrays();
 
   //! Channel index in terms of row, column index
-  int channel_index(int row, int col) const { return row * (n_pins_x_ + 1) + col; }
+  gsl::index channel_index(gsl::index row, gsl::index col) const { return row * (n_pins_x_ + 1) + col; }
 
   //! Rod power at a given node in a given pin, computed by integrating the heat source
   //! (assumed constant in each ring) over the pin.
   //! \param pin   pin index
   //! \param axial axial index
-  double rod_axial_node_power(const int pin, const int axial) const;
+  double rod_axial_node_power(gsl::index pin, gsl::index axial) const;
 
   //! Diagnostic function to assess whether the mass is conserved by the subchannel
   //! solver by comparing the mass flowrate in each axial plane (at cell-centered
@@ -329,7 +329,7 @@ private:
 
   //! Maximum number of iterations for subchannel solution, set to a default value
   //! of 100 if not set by the user
-  int max_subchannel_its_ = 100;
+  std::size_t max_subchannel_its_ = 100;
 
   //! Convergence tolerance on enthalpy for the subchannel solution for use in
   //! convergence based on the L-1 norm, set to a default value of 1e-2

@@ -5,6 +5,7 @@
 
 #include "comm.h"
 #include "mpi.h"
+#include <gsl-lite/include/gsl.h>
 
 namespace enrico {
 
@@ -24,9 +25,9 @@ public:
   virtual void solve_step() {}
 
   //! Write results for physics solve for given timestep and iteration
-  //! \param timestep timestep index
-  //! \param iteration iteration index
-  virtual void write_step(int timestep, int iteration) {}
+  //! \param timestep timestep index. Negative values permitted.
+  //! \param iteration iteration index. Negative values permitted.
+  virtual void write_step(gsl::index timestep, gsl::index iteration) {}
 
   //! Write results for a physics solve at the end of the coupled simulation
   void write_step() { this->write_step(-1, -1); }

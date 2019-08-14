@@ -70,10 +70,10 @@ private:
   std::unique_ptr<SurrogateHeatDriver> heat_driver_; //!< The heat surrogate driver
 
   //! Number of OpenMC cells that are solid
-  int32_t n_solid_cells_;
+  std::size_t n_solid_cells_;
 
   //! Number of OpenMC cells that are fluid
-  int32_t n_fluid_cells_;
+  std::size_t n_fluid_cells_;
 };
 
 } // namespace enrico

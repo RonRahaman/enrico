@@ -52,7 +52,7 @@ void OpenmcHeatDriver::init_mappings()
   const auto& r_clad = heat_driver_->r_grid_clad_;
   const auto& z = heat_driver_->z_;
 
-  std::unordered_map<CellInstance, int> tracked;
+  std::unordered_map<CellInstance, gsl::index> tracked;
 
   // index for rings in solid
   int ring_index = 0;
@@ -77,7 +77,7 @@ void OpenmcHeatDriver::init_mappings()
         if (k < heat_driver_->n_fuel_rings_) {
           ravg = 0.5 * (r_fuel(k) + r_fuel(k + 1));
         } else {
-          int m = k - heat_driver_->n_fuel_rings_;
+          auto m = k - heat_driver_->n_fuel_rings_;
           ravg = 0.5 * (r_clad(m) + r_clad(m + 1));
         }
 
@@ -130,7 +130,7 @@ void OpenmcHeatDriver::init_mappings()
 
   // set the number of solid cells before defining mappings for fluid cells
   if (openmc_driver_->active()) {
-    n_solid_cells_ = gsl::narrow<int>(openmc_driver_->cells_.size());
+    n_solid_cells_ = openmc_driver_->cells_.size();
   }
 
   // index for elements in fluid
@@ -140,7 +140,7 @@ void OpenmcHeatDriver::init_mappings()
   // are no azimuthal divisions in the fluid phase in the OpenMC model so that we
   // can take a point on a 45 degree ray from the pin center. TODO: add a check to make
   // sure that the T/H model is finer than the OpenMC model.
-  int n_elems = heat_driver_->n_pins_ * heat_driver_->n_axial_;
+  auto n_elems = heat_driver_->n_pins_ * heat_driver_->n_axial_;
   elem_to_cell_inst_.resize(n_elems);
 
   for (gsl::index i = 0; i < heat_driver_->n_pins_; ++i) {
@@ -174,7 +174,7 @@ void OpenmcHeatDriver::init_mappings()
   }
 
   if (openmc_driver_->active()) {
-    n_fluid_cells_ = gsl::narrow<int>(openmc_driver_->cells_.size() - n_solid_cells_);
+    n_fluid_cells_ = openmc_driver_->cells_.size() - n_solid_cells_;
   }
 }
 
@@ -209,8 +209,8 @@ void OpenmcHeatDriver::init_densities()
       // at all anyways.
       densities_.fill(0.0);
 
-      int fluid_index = 0;
-      int fluid_offset =
+      gsl::index fluid_index = 0;
+      auto fluid_offset =
         heat_driver_->n_pins_ * heat_driver_->n_axial_ * heat_driver_->n_rings();
       for (gsl::index i = 0; i < heat_driver_->n_pins_; ++i) {
         for (gsl::index j = 0; j < heat_driver_->n_axial_; ++j) {
@@ -371,7 +371,8 @@ void OpenmcHeatDriver::update_density()
   auto fluid_offset =
     heat_driver_->n_pins_ * heat_driver_->n_rings() * heat_driver_->n_axial_;
 
-  for (gsl::index i = n_solid_cells_; i < n_solid_cells_ + n_fluid_cells_; ++i) {
+  for (auto i = gsl::narrow<gsl::index>(n_solid_cells_);
+      i < n_solid_cells_ + n_fluid_cells_; ++i) {
     const auto& c = openmc_driver_->cells_[i];
     const auto& elems = cell_inst_to_elem_[i];
 
@@ -417,7 +418,7 @@ void OpenmcHeatDriver::set_temperature()
   auto fluid_offset =
     heat_driver_->n_pins_ * heat_driver_->n_rings() * heat_driver_->n_axial_;
   for (gsl::index i = 0; i < n_fluid_cells_; ++i) {
-    int index = n_solid_cells_ + i;
+    auto index = gsl::narrow<gsl::index>(n_solid_cells_) + i;
     const auto& c = openmc_driver_->cells_[index];
     const auto& elems = cell_inst_to_elem_[index];
 

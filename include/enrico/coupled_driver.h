@@ -6,6 +6,7 @@
 
 #include "enrico/driver.h"
 #include "enrico/neutronics_driver.h"
+#include "gsl/gsl"
 #include "heat_fluids_driver.h"
 #include "pugixml.hpp"
 #include "xtensor/xtensor.hpp"
@@ -71,11 +72,11 @@ public:
 
   //! Get timestep iteration index
   //! \return timestep iteration index
-  int get_timestep_index() const { return i_timestep_; }
+  gsl::index get_timestep_index() const { return i_timestep_; }
 
   //! Get Picard iteration index within current timestep
   //! \return Picard iteration index within current timestep
-  int get_picard_index() const { return i_picard_; }
+  gsl::index get_picard_index() const { return i_picard_; }
 
   //! Whether solve is for first Picard iteration of first timestep
   bool is_first_iteration() const
@@ -87,9 +88,9 @@ public:
 
   double power_; //!< Power in [W]
 
-  int max_timesteps_; //!< Maximum number of time steps
+  std::size_t max_timesteps_; //!< Maximum number of time steps
 
-  int max_picard_iter_; //!< Maximum number of Picard iterations
+  std::size_t max_picard_iter_; //!< Maximum number of Picard iterations
 
   //! Picard iteration convergence tolerance, defaults to 1e-3 if not set
   double epsilon_{1e-3};
@@ -156,9 +157,9 @@ protected:
   xt::xtensor<double, 1> heat_source_prev_; //!< Previous Picard iteration heat source
 
 private:
-  int i_timestep_; //!< Index pertaining to current timestep
+  gsl::index i_timestep_; //!< Index pertaining to current timestep
 
-  int i_picard_; //!< Index pertaining to current Picard iteration
+  gsl::index i_picard_; //!< Index pertaining to current Picard iteration
 };
 
 } // namespace enrico

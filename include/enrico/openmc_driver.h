@@ -40,7 +40,7 @@ public:
   //! Writes OpenMC output for given timestep and iteration
   //! \param timestep timestep index
   //! \param iteration iteration index
-  void write_step(int timestep, int iteration) final;
+  void write_step(gsl::index timestep, gsl::index iteration) final;
 
   //! Finalization required in each Picard iteration
   void finalize_step() final;
@@ -49,7 +49,7 @@ public:
   openmc::Tally* tally_;            //!< Fission energy deposition tally
   int32_t index_filter_;            //!< Index in filters arrays for material filter
   std::vector<CellInstance> cells_; //!< Array of cell instances
-  int n_fissionable_cells_;         //!< Number of fissionable cells in model
+  std::size_t n_fissionable_cells_; //!< Number of fissionable cells in model
 };
 
 } // namespace enrico
