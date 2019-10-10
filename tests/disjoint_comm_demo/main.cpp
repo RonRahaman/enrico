@@ -61,8 +61,8 @@ void get_disjoint_comms(MPI_Comm super_comm,
     MPI_Comm_rank(super_comm, &super_comm_rank);
     MPI_Comm_size(super_comm, &super_comm_size);
 
-    char myHostName[_POSIX_HOST_NAME_MAX];
-    gethostname(myHostName, _POSIX_HOST_NAME_MAX);
+    char myHostName[_SC_HOST_NAME_MAX];
+    gethostname(myHostName, _SC_HOST_NAME_MAX);
 
     for (int i = 0; i < super_comm_size; i++) {
       if (super_comm_rank == i)
