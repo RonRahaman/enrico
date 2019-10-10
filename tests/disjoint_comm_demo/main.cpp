@@ -1,13 +1,8 @@
-#include "enrico/message_passing.h"
 #include "gsl.h"
 
-#include <mpi.h>
-
-// Debug: For printing node indices
 #include <iostream>
+#include <mpi.h>
 #include <unistd.h>
-
-namespace enrico {
 
 void get_node_comms(MPI_Comm super_comm,
                     int procs_per_node,
@@ -77,30 +72,15 @@ void get_disjoint_comms(MPI_Comm super_comm,
   }
 }
 
-MPI_Datatype define_position_mpi_datatype()
+int main(int argc, char* argv[])
 {
+  MPI_Init(&argc, &argv);
 
-  Position p;
-  int blockcounts[3] = {1, 1, 1};
-  MPI_Datatype types[3] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE};
-  MPI_Aint displs[3];
+  MPI_Comm sub_comm, intranode_comm;
+  int num_nodes = 1;
 
-  // Get displacements of struct members
-  MPI_Get_address(&p.x, &displs[0]);
-  MPI_Get_address(&p.y, &displs[1]);
-  MPI_Get_address(&p.z, &displs[2]);
+  get_disjoint_comms(MPI_COMM_WORLD, num_nodes, &sub_comm, &intranode_comm);
 
-  // Make the displacements relative
-  displs[2] -= displs[0];
-  displs[1] -= displs[0];
-  displs[0] = 0;
-
-  // Make datatype
-  MPI_Datatype type;
-  MPI_Type_create_struct(3, blockcounts, displs, types, &type);
-  MPI_Type_commit(&type);
-
-  return type;
+  MPI_Finalize();
+  return 0;
 }
-
-} // namespace enrico

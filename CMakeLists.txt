@@ -160,3 +160,10 @@ add_executable(unittests
   tests/unit/test_surrogate_th.cpp)
 target_link_libraries(unittests PUBLIC Catch pugixml libenrico)
 set_target_properties(unittests PROPERTIES CXX_STANDARD 14 CXX_EXTENSIONS OFF)
+
+# =============================================================================
+# Debug:  For get_disjoint_comm()
+# =============================================================================
+
+add_executable(disjoint_comm_demo tests/disjoint_comm_demo/main.cpp)
+target_link_libraries(disjoint_comm_demo PRIVATE gsl-lite)
