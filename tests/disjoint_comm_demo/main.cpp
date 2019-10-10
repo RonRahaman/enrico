@@ -1,4 +1,4 @@
-#include "gsl.h"
+#include "gsl.hpp"
 
 #include <iostream>
 #include <mpi.h>

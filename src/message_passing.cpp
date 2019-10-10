@@ -1,11 +1,7 @@
 #include "enrico/message_passing.h"
-#include "gsl.h"
+#include "gsl.hpp"
 
 #include <mpi.h>
-
-// Debug: For printing node indices
-#include <iostream>
-#include <unistd.h>
 
 namespace enrico {
 
@@ -56,25 +52,6 @@ void get_disjoint_comms(MPI_Comm super_comm,
     MPI_Comm_rank(indexing_comm, &node_index);
   }
   MPI_Bcast(static_cast<void*>(&node_index), 1, MPI_INT, 0, *intranode_comm);
-
-  //===========================================================================
-  // Debug: Print node indices
-  //===========================================================================
-
-  int super_comm_rank = 0, super_comm_size = 0;
-  if (super_comm != MPI_COMM_NULL) {
-    MPI_Comm_rank(super_comm, &super_comm_rank);
-    MPI_Comm_size(super_comm, &super_comm_size);
-
-    char myHostName[_POSIX_HOST_NAME_MAX];
-    gethostname(myHostName, _POSIX_HOST_NAME_MAX);
-
-    for (int i = 0; i < super_comm_size; i++) {
-      if (super_comm_rank == i)
-        std::cout << myHostName << "\t: " << node_index << std::endl;
-      MPI_Barrier(super_comm);
-    }
-  }
 }
 
 MPI_Datatype define_position_mpi_datatype()
