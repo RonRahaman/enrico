@@ -1,8 +1,6 @@
 #include "enrico/message_passing.h"
-#include "gsl.hpp"
 
 #include <mpi.h>
-#include <utility>
 
 namespace enrico {
 
@@ -106,7 +104,6 @@ void get_disjoint_comms(MPI_Comm super_comm,
     // If we call get_node_comms with procs_per_node == 1, then the indexing_comm
     // should include procs for which intranode_rank == 0.  This must be ensures for
     // the MPI_Bcase (below) to do its intended purpose
-    Ensures(intranode_rank == 0);
     MPI_Comm_rank(indexing_comm, &node_index);
   }
   MPI_Bcast(static_cast<void*>(&node_index), 1, MPI_INT, 0, *intranode_comm);

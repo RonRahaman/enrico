@@ -165,5 +165,5 @@ set_target_properties(unittests PROPERTIES CXX_STANDARD 14 CXX_EXTENSIONS OFF)
 # Debug:  For get_disjoint_comm()
 # =============================================================================
 
-add_executable(disjoint_comm_demo tests/disjoint_comm_demo/main.cpp)
-target_link_libraries(disjoint_comm_demo PRIVATE gsl-lite)
+add_executable(disjoint_comm_demo tests/disjoint_comm_demo/main.cpp src/message_passing.cpp)
+target_include_directories(disjoint_comm_demo PUBLIC include)

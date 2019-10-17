@@ -6,8 +6,17 @@
 #include "mpi.h"
 #include "geom.h"
 
+#include <utility>
+
 //! The ENRICO namespace
 namespace enrico {
+
+void get_comms(MPI_Comm super_comm,
+               std::pair<int, int> n_subcomm_nodes,
+               std::pair<int, int> n_subcomm_procs_per_node,
+               std::pair<MPI_Comm, MPI_Comm>* sub_comms,
+               MPI_Comm* coupling_comm,
+               MPI_Comm* intranode_comm);
 
 //! Splits a given MPI comunicator into new inter- and intra-node communicators
 //!
