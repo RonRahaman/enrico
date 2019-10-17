@@ -36,19 +36,27 @@ void get_disjoint_comms(MPI_Comm super_comm,
                         MPI_Comm* intranode_comm)
 {
 
-  MPI_Comm indexing_comm;
-  get_node_comms(super_comm, 1, &indexing_comm, intranode_comm);
-
-  int intranode_rank = 0;
+  int intranode_rank, intranode_size;
   MPI_Comm_rank(*intranode_comm, &intranode_rank);
+  MPI_Comm_size(*intranode_comm, &intranode_size);
+
+  // internode_comm will get 1 rank per node
+  MPI_Comm internode_comm;
+  get_node_comms(super_comm, 1, &internode_comm, intranode_comm);
+
+  int internode_rank, internode_size;
+  MPI_Comm_rank(internode_comm, &internode_rank);
+  MPI_Comm_size(internode_comm, &internode_size);
+
+  // For absolute clarity, require that node
 
   int node_index = 0;
-  if (indexing_comm != MPI_COMM_NULL) {
-    // If we call get_node_comms with procs_per_node == 1, then the indexing_comm
+  if (internode_comm != MPI_COMM_NULL) {
+    // If we call get_node_comms with procs_per_node == 1, then the internode_comm
     // should include procs for which intranode_rank == 0.  This must be ensures for
     // the MPI_Bcase (below) to do its intended purpose
     Ensures(intranode_rank == 0);
-    MPI_Comm_rank(indexing_comm, &node_index);
+    MPI_Comm_rank(internode_comm, &node_index);
   }
   MPI_Bcast(static_cast<void*>(&node_index), 1, MPI_INT, 0, *intranode_comm);
 

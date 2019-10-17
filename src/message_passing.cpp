@@ -2,8 +2,66 @@
 #include "gsl.hpp"
 
 #include <mpi.h>
+#include <utility>
 
 namespace enrico {
+
+void get_comms(MPI_Comm super_comm,
+               std::pair<int, int> n_subcomm_nodes,
+               std::pair<int, int> n_subcomm_procs_per_node,
+               std::pair<MPI_Comm, MPI_Comm>* sub_comms,
+               MPI_Comm* coupling_comm,
+               MPI_Comm* intranode_comm)
+{
+
+  // super_rank is used as the "key" to retain ordering in the comm splits.
+  // This can sometimes allow the sub_comms to retain some intent from the super_comm's
+  // proc layout
+  int super_rank;
+  MPI_Comm_rank(super_comm, &super_rank);
+
+  // Each intranode_comm contains all ranks in one node
+  MPI_Comm_split_type(
+    super_comm, MPI_COMM_TYPE_SHARED, super_rank, MPI_INFO_NULL, intranode_comm);
+  int intranode_rank;
+  MPI_Comm_rank(*intranode_comm, &intranode_rank);
+
+  // Internode comm spans all nodes and contains one rank in every node
+  int color = (intranode_rank == 0) ? 0 : 1;
+  MPI_Comm_split(super_comm, color, super_rank, coupling_comm);
+  if (color != 0)
+    MPI_Comm_free(coupling_comm);
+
+  // The node index is different for each node.  All ranks in a given node have the same
+  // node_index
+  int node_index, num_nodes;
+  if (*coupling_comm != MPI_COMM_NULL) {
+    MPI_Comm_rank(*coupling_comm, &node_index);
+    MPI_Comm_size(*coupling_comm, &num_nodes);
+  }
+  MPI_Bcast(static_cast<void*>(&node_index), 1, MPI_INT, 0, *intranode_comm);
+  MPI_Bcast(static_cast<void*>(&num_nodes), 1, MPI_INT, 0, *intranode_comm);
+
+  // For the first subcomm, get the left nodes:
+  if (node_index < n_subcomm_nodes.first &&
+      intranode_rank < n_subcomm_procs_per_node.first)
+    color = 0;
+  else
+    color = 1;
+  MPI_Comm_split(super_comm, color, super_rank, &sub_comms->first);
+  if (color != 0)
+    MPI_Comm_free(&sub_comms->first);
+
+  // For the second subcomm, get the right nodes:
+  if (node_index >= num_nodes - n_subcomm_nodes.second &&
+      intranode_rank < n_subcomm_procs_per_node.second)
+    color = 0;
+  else
+    color = 1;
+  MPI_Comm_split(super_comm, color, super_rank, &sub_comms->second);
+  if (color != 0)
+    MPI_Comm_free(&sub_comms->first);
+}
 
 void get_node_comms(MPI_Comm super_comm,
                     int procs_per_node,
