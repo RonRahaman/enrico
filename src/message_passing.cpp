@@ -1,6 +1,10 @@
 #include "enrico/message_passing.h"
+#include "enrico/comm.h"
 
-#include <mpi.h>
+#include <iostream>
+#include <map>
+#include <string>
+#include <unistd.h>
 
 namespace enrico {
 
@@ -107,6 +111,33 @@ void get_disjoint_comms(MPI_Comm super_comm,
     MPI_Comm_rank(indexing_comm, &node_index);
   }
   MPI_Bcast(static_cast<void*>(&node_index), 1, MPI_INT, 0, *intranode_comm);
+}
+
+void print_comm_layout(Comm& supercomm, std::map<std::string, Comm>& subcomms)
+{
+
+  char hostname[_SC_HOST_NAME_MAX];
+  gethostname(hostname, _SC_HOST_NAME_MAX);
+
+  if (supercomm.rank == 0) {
+    std::cout << "subcomm_name,subcomm_rank,hostname,supercomm_rank" << std::endl;
+  }
+  MPI_Barrier(supercomm.comm);
+
+  for (const auto& p : subcomms) {
+    auto& comm = p.second;
+    auto& comm_name = p.first;
+    if (comm.comm != MPI_COMM_NULL) {
+      for (int j = 0; j < comm.size; ++j) {
+        if (comm.rank == j) {
+          std::cout << comm_name << "," << comm.rank << "," << hostname << ","
+                    << supercomm.rank << std::endl;
+        }
+        MPI_Barrier(comm.comm);
+      }
+    }
+    MPI_Barrier(supercomm.comm);
+  }
 }
 
 MPI_Datatype define_position_mpi_datatype()

@@ -3,9 +3,12 @@
 #ifndef ENRICO_MESSAGE_PASSING_H
 #define ENRICO_MESSAGE_PASSING_H
 
-#include "mpi.h"
-#include "geom.h"
+#include "enrico/comm.h"
+#include "enrico/geom.h"
 
+#include "mpi.h"
+
+#include <map>
 #include <utility>
 
 //! The ENRICO namespace
@@ -52,6 +55,8 @@ void get_node_comms(MPI_Comm super_comm,
                     int procs_per_node,
                     MPI_Comm* sub_comm,
                     MPI_Comm* intranode_comm);
+
+void print_comm_layout(Comm& supercomm, std::map<std::string, Comm>& subcomms);
 
 //! Define position MPI data type
 //! \return MPI position data type

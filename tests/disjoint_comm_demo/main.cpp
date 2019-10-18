@@ -31,34 +31,13 @@ int main(int argc, char* argv[])
   // Print comms, nodes, and ranks
   //===========================================================================
 
-  char hostname[_SC_HOST_NAME_MAX];
-  gethostname(hostname, _SC_HOST_NAME_MAX);
-
   enrico::Comm super(super_comm);
   std::map<std::string, enrico::Comm> others{{"sub0", enrico::Comm(subcomms.first)},
                                              {"sub1", enrico::Comm(subcomms.second)},
                                              {"intra", enrico::Comm(intranode_comm)},
                                              {"coup", enrico::Comm(coupling_comm)}};
 
-  if (super.rank == 0) {
-    std::cout << "subcomm,subcomm_rank,host,supercomm_rank" << std::endl;
-  }
-  MPI_Barrier(super.comm);
-
-  for (const auto& p : others) {
-    auto& comm = p.second;
-    auto& comm_name = p.first;
-    if (comm.comm != MPI_COMM_NULL) {
-      for (int j = 0; j < comm.size; ++j) {
-        if (comm.rank == j) {
-          std::cout << comm_name << "," << comm.rank << "," << hostname << ","
-                    << super.rank << std::endl;
-        }
-        MPI_Barrier(comm.comm);
-      }
-    }
-    MPI_Barrier(super.comm);
-  }
+  enrico::print_comm_layout(super, others);
 
   MPI_Finalize();
   return 0;
