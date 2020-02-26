@@ -49,6 +49,10 @@ public:
   //! \return True if the communicator is not MPI_COMM_NULL
   bool active() const { return comm != MPI_COMM_NULL; }
 
+  //! Queries whether the calling rank is the root of this comm
+  //! \return True if the calling rank is the root of this comm
+  bool root() const { return rank == MPI_ROOT; }
+
   //! Block until all processes have reached this call
   //!
   //! \return Error value
