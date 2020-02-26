@@ -51,7 +51,7 @@ public:
 
   //! Queries whether the calling rank is the root of this comm
   //! \return True if the calling rank is the root of this comm
-  bool root() const { return rank == MPI_ROOT; }
+  bool root() const { return rank == 0; }
 
   //! Block until all processes have reached this call
   //!

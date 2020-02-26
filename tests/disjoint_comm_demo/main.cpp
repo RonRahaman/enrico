@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
   for (int i = 0;  i < world.size; ++i) {
     if (world.rank == i) {
       if (i == 0) {
-        std::cout << "Host\tWorld\tLeft\tRight\tIntranode\tCoupling" << std::endl;
+        std::cout << "Host\t\tWorld\tLeft\tRight\tIntra\tCoup" << std::endl;
       }
       std::cout <<
       hostname << "\t" <<

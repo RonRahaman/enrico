@@ -55,14 +55,16 @@ void get_disjoint_comms(Comm super_comm,
 
   // Each rank gets its node index (inferred from the ranks of the coupling comms)
   int node_idx;
-  std::vector<int> v;
-  if (coupling_comm.root()) {
-    for (int i = 0; i < total_nodes; total_nodes++) {
-      v.push_back(i);
+  if (coupling_comm.active()) {
+    std::vector<int> v;
+    if (coupling_comm.root()) {
+      for (int i = 0; i < total_nodes; ++i) {
+        v.push_back(i);
+      }
     }
+    MPI_Scatter(
+      v.data(), v.size(), MPI_INT, &node_idx, 1, MPI_INT, 0, coupling_comm.comm);
   }
-  MPI_Scatter(
-    v.data(), v.size(), MPI_INT, &node_idx, 1, MPI_INT, MPI_ROOT, coupling_comm.comm);
   intranode_comm.broadcast(node_idx);
 
   // Get the disjoint comms. disjoint_comms[0] gets the left-hand nodes, and
@@ -82,7 +84,7 @@ void get_disjoint_comms(Comm super_comm,
     }
     // Right-hand nodes
     else {
-      color = (node_idx >= total_nodes - n && intranode_comm.rank < ppn) ? KEEP : DISCARD;
+      color = (node_idx >= total_nodes - n - 1 && intranode_comm.rank < ppn) ? KEEP : DISCARD;
     }
     MPI_Comm_split(super_comm.comm, color, super_comm.rank, &temp_comm);
     scomm = Comm(temp_comm);
