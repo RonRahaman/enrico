@@ -120,6 +120,9 @@ target_link_libraries(enrico PUBLIC libenrico)
 # =============================================================================
 add_executable(comm_split_demo tests/comm_split_demo/main.cpp)
 
+add_executable(disjoint_comm_demo tests/disjoint_comm_demo/main.cpp)
+target_link_libraries(disjoint_comm_demo PUBLIC libenrico)
+
 add_executable(test_nek5000_singlerod tests/singlerod/short/test_nek5000.cpp)
 target_link_libraries(test_nek5000_singlerod PUBLIC libenrico)
 
