@@ -84,7 +84,7 @@ void get_disjoint_comms(Comm super_comm,
     }
     // Right-hand nodes
     else {
-      color = (node_idx >= total_nodes - n - 1 && intranode_comm.rank < ppn) ? KEEP : DISCARD;
+      color = (node_idx >= total_nodes - n && intranode_comm.rank < ppn) ? KEEP : DISCARD;
     }
     MPI_Comm_split(super_comm.comm, color, super_comm.rank, &temp_comm);
     scomm = Comm(temp_comm);
