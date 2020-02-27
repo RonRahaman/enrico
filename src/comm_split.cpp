@@ -63,7 +63,7 @@ void get_disjoint_comms(Comm super_comm,
       }
     }
     MPI_Scatter(
-      v.data(), v.size(), MPI_INT, &node_idx, 1, MPI_INT, 0, coupling_comm.comm);
+      v.data(), 1, MPI_INT, &node_idx, 1, MPI_INT, 0, coupling_comm.comm);
   }
   intranode_comm.broadcast(node_idx);
 
