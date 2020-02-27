@@ -72,28 +72,30 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
 
   // Get parameters from enrico.xml
   double pressure_bc = node.child("pressure_bc").text().as_double();
-  neutronics_procs_per_node_ = node.child("openmc_procs_per_node").text().as_int();
 
-  // Postcondition checks on user inputs
-  Expects(neutronics_procs_per_node_ > 0);
+  std::array<int, 2> nodes{node.child("openmc_nodes").text().as_int(),
+                           node.child("nek5000_nodes").text().as_int()};
+  std::array<int, 2> procs_per_node{node.child("openmc_procs_per_node").text().as_int(),
+                                    node.child("nek5000_procs_per_node").text().as_int()};
+  std::array<enrico::Comm, 2> driver_comms;
 
   // Create communicator for neutronics with requested processes per node
-  Comm neutronics_comm;
-  enrico::get_node_comms(
-    comm_, neutronics_procs_per_node_, neutronics_comm, intranode_comm_);
+  enrico::get_driver_comms(
+    comm_, nodes, procs_per_node, driver_comms, intranode_comm_, coupling_comm_);
 
   // Instantiate neutronics driver
-  neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm.comm);
+  neutronics_driver_ = std::make_unique<OpenmcDriver>(driver_comms[0].comm);
 
   // Instantiate heat-fluids driver
   std::string s = node.child_value("driver_heatfluids");
   if (s == "nek5000") {
     auto heat_node = node.child("nek5000");
-    heat_fluids_driver_ = std::make_unique<NekDriver>(comm, pressure_bc, heat_node);
+    heat_fluids_driver_ =
+      std::make_unique<NekDriver>(driver_comms[1].comm, pressure_bc, heat_node);
   } else if (s == "surrogate") {
     auto heat_node = node.child("heat_surrogate");
     heat_fluids_driver_ =
-      std::make_unique<SurrogateHeatDriver>(comm, pressure_bc, heat_node);
+      std::make_unique<SurrogateHeatDriver>(driver_comms[1].comm, pressure_bc, heat_node);
   } else {
     throw std::runtime_error{"Invalid value for <driver_heatfluids>"};
   }

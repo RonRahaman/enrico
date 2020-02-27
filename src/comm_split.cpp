@@ -25,12 +25,12 @@ void get_node_comms(Comm super_comm,
   }
 }
 
-void get_disjoint_comms(Comm super_comm,
-                        std::array<int, 2> num_nodes,
-                        std::array<int, 2> procs_per_node,
-                        std::array<Comm, 2>& disjoint_comms,
-                        Comm& intranode_comm,
-                        Comm& coupling_comm)
+void get_driver_comms(Comm super_comm,
+                      std::array<int, 2> num_nodes,
+                      std::array<int, 2> procs_per_node,
+                      std::array<Comm, 2>& driver_comms,
+                      Comm& intranode_comm,
+                      Comm& coupling_comm)
 {
   const int KEEP = 0;
   const int DISCARD = 1;
@@ -62,20 +62,19 @@ void get_disjoint_comms(Comm super_comm,
         v.push_back(i);
       }
     }
-    MPI_Scatter(
-      v.data(), 1, MPI_INT, &node_idx, 1, MPI_INT, 0, coupling_comm.comm);
+    MPI_Scatter(v.data(), 1, MPI_INT, &node_idx, 1, MPI_INT, 0, coupling_comm.comm);
   }
   intranode_comm.broadcast(node_idx);
 
-  // Get the disjoint comms. disjoint_comms[0] gets the left-hand nodes, and
-  // disjoint_comm[1] gets the right-hand nodes, both based on the node_idx
+  // Get the driver comms. driver_comms[0] gets the left-hand nodes, and
+  // driver_comms[1] gets the right-hand nodes, both based on the node_idx
   for (const int i : {0, 1}) {
 
     // 0 is the null value for num_nodes and procs_per_node.  In that case, we use the
     // maximum number of nodes or procs-per-node
     auto n = num_nodes[i] > 0 ? num_nodes[i] : total_nodes;
     auto ppn = procs_per_node[i] > 0 ? procs_per_node[i] : intranode_comm.size;
-    auto& scomm = disjoint_comms[i];
+    auto& scomm = driver_comms[i];
 
     int color;
     // Left-hand nodes

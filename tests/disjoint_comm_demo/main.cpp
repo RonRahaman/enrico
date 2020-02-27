@@ -11,7 +11,7 @@ public:
 
   enrico::Comm super_comm;
 
-  std::array<enrico::Comm, 2> disjoint_comms;
+  std::array<enrico::Comm, 2> driver_comms;
   enrico::Comm intranode_comm, coupling_comm;
 };
 
@@ -20,10 +20,11 @@ DisjointDriver::DisjointDriver(MPI_Comm comm, pugi::xml_node node)
 {
   std::array<int, 2> nodes{node.child("neutronics_nodes").text().as_int(),
                            node.child("heat_fluids_nodes").text().as_int()};
-  std::array<int, 2> procs_per_node{node.child("neutronics_procs_per_node").text().as_int(),
-                                    node.child("heat_fluids_procs_per_node").text().as_int()};
-  enrico::get_disjoint_comms(super_comm, nodes, procs_per_node,
-    disjoint_comms, intranode_comm, coupling_comm);
+  std::array<int, 2> procs_per_node{
+    node.child("neutronics_procs_per_node").text().as_int(),
+    node.child("heat_fluids_procs_per_node").text().as_int()};
+  enrico::get_driver_comms(
+    super_comm, nodes, procs_per_node, driver_comms, intranode_comm, coupling_comm);
 }
 
 int main(int argc, char *argv[]) {
@@ -49,12 +50,9 @@ int main(int argc, char *argv[]) {
       if (i == 0) {
         std::cout << "Host\t\tWorld\tLeft\tRight\tIntra\tCoup" << std::endl;
       }
-      std::cout <<
-      hostname << "\t" <<
-      world.rank << "\t" <<
-      driver.disjoint_comms[0].rank << "\t" <<
-      driver.disjoint_comms[1].rank << "\t" <<
-      driver.intranode_comm.rank << "\t" <<
+      std::cout << hostname << "\t" << world.rank << "\t" << driver.driver_comms[0].rank
+                << "\t" << driver.driver_comms[1].rank << "\t"
+                << driver.intranode_comm.rank << "\t" <<
       driver.coupling_comm.rank << "\t" <<
       std::endl;
     }
