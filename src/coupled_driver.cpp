@@ -73,29 +73,38 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   // Get parameters from enrico.xml
   double pressure_bc = node.child("pressure_bc").text().as_double();
 
+  // Create communicators
   std::array<int, 2> nodes{node.child("openmc_nodes").text().as_int(),
                            node.child("nek5000_nodes").text().as_int()};
   std::array<int, 2> procs_per_node{node.child("openmc_procs_per_node").text().as_int(),
                                     node.child("nek5000_procs_per_node").text().as_int()};
   std::array<enrico::Comm, 2> driver_comms;
-
-  // Create communicator for neutronics with requested processes per node
   enrico::get_driver_comms(
     comm_, nodes, procs_per_node, driver_comms, intranode_comm_, coupling_comm_);
+  neutronics_comm_ = driver_comms[0];
+  heat_comm_ = driver_comms[1];
+
+  // Send rank of neutronics root to all procs
+  neutronics_root_ = neutronics_comm_.is_root() ? comm_.rank : -1;
+  MPI_Allreduce(MPI_IN_PLACE, &neutronics_root_, 1, MPI_INT, MPI_MAX, comm_.comm);
+
+  // Send rank of heat root to all procs
+  heat_root_ = heat_comm_.is_root() ? comm_.rank : -1;
+  MPI_Allreduce(MPI_IN_PLACE, &heat_root_, 1, MPI_INT, MPI_MAX, comm_.comm);
 
   // Instantiate neutronics driver
-  neutronics_driver_ = std::make_unique<OpenmcDriver>(driver_comms[0].comm);
+  neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm_.comm);
 
   // Instantiate heat-fluids driver
   std::string s = node.child_value("driver_heatfluids");
   if (s == "nek5000") {
     auto heat_node = node.child("nek5000");
     heat_fluids_driver_ =
-      std::make_unique<NekDriver>(driver_comms[1].comm, pressure_bc, heat_node);
+      std::make_unique<NekDriver>(heat_comm_.comm, pressure_bc, heat_node);
   } else if (s == "surrogate") {
     auto heat_node = node.child("heat_surrogate");
     heat_fluids_driver_ =
-      std::make_unique<SurrogateHeatDriver>(driver_comms[1].comm, pressure_bc, heat_node);
+      std::make_unique<SurrogateHeatDriver>(heat_comm_.comm, pressure_bc, heat_node);
   } else {
     throw std::runtime_error{"Invalid value for <driver_heatfluids>"};
   }
@@ -281,38 +290,34 @@ void CoupledDriver::init_mappings()
   comm_.message("Initializing mappings");
 
   const auto& heat = this->get_heat_driver();
-  if (heat.active()) {
-    // Get centroids from heat driver
-    auto elem_centroids = heat.centroids();
+  auto& neutronics = this->get_neutronics_driver();
 
-    // Broadcast centroids onto all the neutronics procs
-    this->get_neutronics_driver().comm_.broadcast(elem_centroids);
+  // Get centroids on heat root, send to neutronics root, and bcast to neutronics comms
+  auto elem_centroids = heat.centroids();
+  comm_.sendrecv_replace(elem_centroids, neutronics_root_, heat_root_);
+  neutronics_comm_.broadcast(elem_centroids);
 
-    // Set element->cell and cell->element mappings. Create buffer to store cell
-    // handles corresponding to each heat-fluids global element.
-    elem_to_cell_.resize(heat.n_global_elem());
+  if (neutronics.active()) {
+    // Get cell handle corresponding to each element centroid
+    elem_to_cell_ = neutronics.find(elem_centroids);
 
-    auto& neutronics = this->get_neutronics_driver();
-    if (neutronics.active()) {
-      // Get cell handle corresponding to each element centroid
-      elem_to_cell_ = neutronics.find(elem_centroids);
-
-      // Create a vector of elements for each neutronics cell
-      for (int32_t elem = 0; elem < elem_to_cell_.size(); ++elem) {
-        auto cell = elem_to_cell_[elem];
-        cell_to_elems_[cell].push_back(elem);
-      }
-
-      // Determine number of neutronic cell instances
-      n_cells_ = cell_to_elems_.size();
+    // Create a vector of elements for each neutronics cell
+    for (int32_t elem = 0; elem < elem_to_cell_.size(); ++elem) {
+      auto cell = elem_to_cell_[elem];
+      cell_to_elems_[cell].push_back(elem);
     }
 
-    // Set element -> cell instance mapping on each TH rank
-    intranode_comm_.broadcast(elem_to_cell_);
-
-    // Broadcast number of cell instances
-    intranode_comm_.broadcast(n_cells_);
+    // Determine number of neutronic cell instances
+    n_cells_ = cell_to_elems_.size();
   }
+
+  // Set element -> cell instance mapping on each TH rank
+  comm_.sendrecv_replace(elem_to_cell_, heat_root_, neutronics_root_);
+  heat_comm_.broadcast(elem_to_cell_);
+
+  // Send number of cell instances to each TH rank
+  comm_.sendrecv_replace(n_cells_, heat_root_, neutronics_root_);
+  heat_comm_.broadcast(n_cells_);
 }
 
 void CoupledDriver::init_tallies()

@@ -42,7 +42,7 @@ void get_driver_comms(Comm super_comm,
   intranode_comm = Comm(temp_comm);
 
   // The coupling comm consists of the root process on each intranode_comm.
-  int color = intranode_comm.root() ? KEEP : DISCARD;
+  int color = intranode_comm.is_root() ? KEEP : DISCARD;
   MPI_Comm_split(super_comm.comm, color, super_comm.rank, &temp_comm);
   coupling_comm = Comm(temp_comm);
   if (color == DISCARD) {
@@ -57,7 +57,7 @@ void get_driver_comms(Comm super_comm,
   int node_idx;
   if (coupling_comm.active()) {
     std::vector<int> v;
-    if (coupling_comm.root()) {
+    if (coupling_comm.is_root()) {
       for (int i = 0; i < total_nodes; ++i) {
         v.push_back(i);
       }
