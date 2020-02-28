@@ -81,30 +81,30 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   std::array<enrico::Comm, 2> driver_comms;
   enrico::get_driver_comms(
     comm_, nodes, procs_per_node, driver_comms, intranode_comm_, coupling_comm_);
-  neutronics_comm_ = driver_comms[0];
-  heat_comm_ = driver_comms[1];
+  auto& neutronics_comm = driver_comms[0];
+  auto& heat_comm = driver_comms[1];
 
   // Send rank of neutronics root to all procs
-  neutronics_root_ = neutronics_comm_.is_root() ? comm_.rank : -1;
+  neutronics_root_ = neutronics_comm.is_root() ? comm_.rank : -1;
   MPI_Allreduce(MPI_IN_PLACE, &neutronics_root_, 1, MPI_INT, MPI_MAX, comm_.comm);
 
   // Send rank of heat root to all procs
-  heat_root_ = heat_comm_.is_root() ? comm_.rank : -1;
+  heat_root_ = heat_comm.is_root() ? comm_.rank : -1;
   MPI_Allreduce(MPI_IN_PLACE, &heat_root_, 1, MPI_INT, MPI_MAX, comm_.comm);
 
   // Instantiate neutronics driver
-  neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm_.comm);
+  neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm.comm);
 
   // Instantiate heat-fluids driver
   std::string s = node.child_value("driver_heatfluids");
   if (s == "nek5000") {
     auto heat_node = node.child("nek5000");
     heat_fluids_driver_ =
-      std::make_unique<NekDriver>(heat_comm_.comm, pressure_bc, heat_node);
+      std::make_unique<NekDriver>(heat_comm.comm, pressure_bc, heat_node);
   } else if (s == "surrogate") {
     auto heat_node = node.child("heat_surrogate");
     heat_fluids_driver_ =
-      std::make_unique<SurrogateHeatDriver>(heat_comm_.comm, pressure_bc, heat_node);
+      std::make_unique<SurrogateHeatDriver>(heat_comm.comm, pressure_bc, heat_node);
   } else {
     throw std::runtime_error{"Invalid value for <driver_heatfluids>"};
   }
@@ -295,7 +295,7 @@ void CoupledDriver::init_mappings()
   // Get centroids on heat root, send to neutronics root, and bcast to neutronics comms
   auto elem_centroids = heat.centroids();
   comm_.sendrecv_replace(elem_centroids, neutronics_root_, heat_root_);
-  neutronics_comm_.broadcast(elem_centroids);
+  neutronics.comm_.broadcast(elem_centroids);
 
   if (neutronics.active()) {
     // Get cell handle corresponding to each element centroid
@@ -313,11 +313,11 @@ void CoupledDriver::init_mappings()
 
   // Set element -> cell instance mapping on each TH rank
   comm_.sendrecv_replace(elem_to_cell_, heat_root_, neutronics_root_);
-  heat_comm_.broadcast(elem_to_cell_);
+  heat.comm_.broadcast(elem_to_cell_);
 
   // Send number of cell instances to each TH rank
   comm_.sendrecv_replace(n_cells_, heat_root_, neutronics_root_);
-  heat_comm_.broadcast(n_cells_);
+  heat.comm_.broadcast(n_cells_);
 }
 
 void CoupledDriver::init_tallies()
@@ -376,10 +376,10 @@ void CoupledDriver::init_volumes()
   // Gather element volumes on TH root and send to all neutronics procs
   elem_volumes_ = heat.volumes();
   comm_.sendrecv_replace(elem_volumes_, neutronics_root_, heat_root_);
-  neutronics_comm_.broadcast(elem_volumes_);
+  neutronics.comm_.broadcast(elem_volumes_);
 
   // Volume check
-  if (neutronics_comm_.is_root()) {
+  if (neutronics.comm_.is_root()) {
     for (CellHandle cell = 0; cell < cell_to_elems_.size(); ++cell) {
       double v_neutronics = neutronics.get_volume(cell);
       double v_heatfluids = 0.0;
@@ -452,15 +452,13 @@ void CoupledDriver::init_elem_fluid_mask()
   comm_.message("Initializing element fluid mask");
 
   const auto& heat = this->get_heat_driver();
+  const auto& neutronics = this->get_neutronics_driver();
 
-  if (heat.active()) {
-    // On TH master rank, fluid mask gets global data. On TH other ranks, fluid
-    // mask is empty
-    elem_fluid_mask_ = heat.fluid_mask();
-
-    // Broadcast fluid mask to neutronics driver
-    this->get_neutronics_driver().comm_.broadcast(elem_fluid_mask_);
-  }
+  // On TH master rank, fluid mask gets global data. On TH other ranks, fluid mask is
+  // empty
+  elem_fluid_mask_ = heat.fluid_mask();
+  comm_.sendrecv_replace(elem_fluid_mask_, neutronics_root_, heat_root_);
+  neutronics.comm_.broadcast(elem_fluid_mask_);
 }
 
 void CoupledDriver::init_cell_fluid_mask()

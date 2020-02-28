@@ -157,8 +157,6 @@ private:
 
   int i_picard_; //!< Index pertaining to current Picard iteration
 
-  Comm neutronics_comm_; //!< The communicator for the neutronics solver
-  Comm heat_comm_;       //!< The communicator for the heat solver
   Comm intranode_comm_;  //!< The communicator representing intranode ranks
   Comm coupling_comm_;   //!< The communicator spanning all nodes
 
