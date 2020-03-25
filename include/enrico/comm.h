@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 namespace enrico {
 
@@ -56,7 +57,16 @@ public:
   //! Block until all processes have reached this call
   //!
   //! \return Error value
-  int Barrier() const { return MPI_Barrier(comm); }
+  int Barrier() const { 
+    int res = MPI_SUCCESS;
+    if (this->active()) {
+      res =  MPI_Barrier(comm); 
+    }
+    if (res != MPI_SUCCESS) {
+      throw std::runtime_error("MPI error in Comm::Barrier");
+    }
+    return res;
+  }
 
   //! Broadcasts a message from the process with rank "root" to all other processes in
   //! this comm.
@@ -70,7 +80,14 @@ public:
   //! \return Error value
   int Bcast(void* buffer, int count, MPI_Datatype datatype, int root = 0) const
   {
-    return MPI_Bcast(buffer, count, datatype, root, comm);
+    int res = MPI_SUCCESS;
+    if (this->active()) {
+      res = MPI_Bcast(buffer, count, datatype, root, comm);
+    }
+    if (res != MPI_SUCCESS) {
+      throw std::runtime_error("MPI error in Comm::Bcast");
+    }
+    return res;
   }
 
   //! Broadcast a scalar value across ranks
@@ -131,8 +148,15 @@ public:
              MPI_Datatype recvtype,
              int root = 0) const
   {
-    return MPI_Gather(
-      sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, root, comm);
+    int res = MPI_SUCCESS;
+    if (this->active()) {
+      res =  MPI_Gather(
+        sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, root, comm);
+    }
+    if (res != MPI_SUCCESS) {
+      throw std::runtime_error("MPI error in Comm::Gather");
+    }
+    return res;
   }
 
   //! Gathers into specified locations from all processes onto a given root
@@ -162,8 +186,15 @@ public:
               MPI_Datatype recvtype,
               int root = 0) const
   {
-    return MPI_Gatherv(
-      sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, root, comm);
+    int res = MPI_SUCCESS;
+    if (this->active()) {
+      res = MPI_Gatherv(
+        sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs, recvtype, root, comm);
+    }
+    if (res != MPI_SUCCESS) {
+      throw std::runtime_error("MPI error in Comm::Gatherv");
+    }
+    return res;
   }
 
   //! Gathers data from all tasks and distribute the combined data to all tasks.
@@ -184,8 +215,15 @@ public:
                 int recvcount,
                 MPI_Datatype recvtype) const
   {
-    return MPI_Allgather(
-      sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm);
+    int res = MPI_SUCCESS;
+    if (this->active()) {
+      res = MPI_Allgather(
+        sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, comm);
+    }
+    if (res != MPI_SUCCESS) {
+      throw std::runtime_error("MPI error in Comm::Allgather");
+    }
+    return res;
   }
 
   //! Displays a message from rank 0
@@ -208,7 +246,8 @@ template<typename T>
 std::enable_if_t<std::is_scalar<std::decay_t<T>>::value>
 Comm::sendrecv_replace(T& value, int dest, int source) const
 {
-  if (rank == dest || rank == source) {
+  int res = MPI_SUCCESS;
+  if (this->active() && (rank == dest || rank == source)) {
     MPI_Sendrecv_replace(&value,
                          1,
                          get_mpi_type<T>(),
@@ -218,6 +257,9 @@ Comm::sendrecv_replace(T& value, int dest, int source) const
                          MPI_ANY_TAG,
                          comm,
                          MPI_STATUS_IGNORE);
+  }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::sendrecv_replace");
   }
 };
 
@@ -232,8 +274,9 @@ void Comm::sendrecv_replace(std::vector<T>& values, int dest, int source) const
     values.resize(n);
   }
   // Send the vector
-  if (rank == dest || rank == source) {
-    MPI_Sendrecv_replace(values.data(),
+  int res = MPI_SUCCESS;
+  if (this->active() && (rank == dest || rank == source)) {
+    res = MPI_Sendrecv_replace(values.data(),
                          n,
                          get_mpi_type<T>(),
                          dest,
@@ -242,6 +285,9 @@ void Comm::sendrecv_replace(std::vector<T>& values, int dest, int source) const
                          MPI_ANY_TAG,
                          comm,
                          MPI_STATUS_IGNORE);
+  }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::sendrecv_replace");
   }
 }
 
@@ -260,7 +306,8 @@ void Comm::sendrecv_replace(xt::xtensor<T, N>& values, int dest, int source) con
   auto n = values.size();
   sendrecv_replace(n, dest, source);
   // Finally, broadcast data
-  if (rank == dest || rank == source) {
+  int res = MPI_SUCCESS;
+  if (this->active() && (rank == dest || rank == source)) {
     MPI_Sendrecv_replace(values.data(),
                          n,
                          get_mpi_type<T>(),
@@ -271,18 +318,28 @@ void Comm::sendrecv_replace(xt::xtensor<T, N>& values, int dest, int source) con
                          comm,
                          MPI_STATUS_IGNORE);
   }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::sendrecv_replace");
+  }
 }
 
 template<typename T>
 std::enable_if_t<std::is_scalar<std::decay_t<T>>::value> Comm::broadcast(T& value,
                                                                          int root) const
 {
-  this->Bcast(&value, 1, get_mpi_type<T>(), root);
+  int res = MPI_SUCCESS;
+  if (this->active()) {
+    res = this->Bcast(&value, 1, get_mpi_type<T>(), root);
+  }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::broadcast");
+  }
 }
 
 template<typename T>
 void Comm::broadcast(std::vector<T>& values, int root) const
 {
+  int res = MPI_SUCCESS;
   if (this->active()) {
     // First broadcast the size of the vector
     int n = values.size();
@@ -291,13 +348,17 @@ void Comm::broadcast(std::vector<T>& values, int root) const
     // Resize vector (for rank != 0) and broacast data
     if (values.size() != n)
       values.resize(n);
-    this->Bcast(values.data(), n, get_mpi_type<T>(), root);
+    res = this->Bcast(values.data(), n, get_mpi_type<T>(), root);
+  }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::broadcast");
   }
 }
 
 template<typename T, size_t N>
 void Comm::broadcast(xt::xtensor<T, N>& values, int root) const
 {
+  int res = MPI_SUCCESS;
   if (this->active()) {
     // First, make sure shape of `values` matches root's
     const auto& s = values.shape();
@@ -315,6 +376,9 @@ void Comm::broadcast(xt::xtensor<T, N>& values, int root) const
 
     // Finally, broadcast data
     this->Bcast(values.data(), n, get_mpi_type<T>(), root);
+  }
+  if (res != MPI_SUCCESS) {
+    throw std::runtime_error("MPI error in Comm::broadcast");
   }
 }
 

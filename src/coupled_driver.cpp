@@ -121,8 +121,7 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   // Send number of global elements to all procs
   const auto& heat = get_heat_driver();
   n_global_elem_ = heat.n_global_elem();
-  comm_.sendrecv_replace(n_global_elem_, neutronics_root_, heat_root_);
-  heat.comm_.broadcast(n_global_elem_);
+  comm_.broadcast(n_global_elem_, heat_root_);
 
   init_mappings();
   init_tallies();
