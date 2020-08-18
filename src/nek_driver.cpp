@@ -14,8 +14,11 @@
 
 namespace enrico {
 
-NekDriver::NekDriver(MPI_Comm comm, pugi::xml_node node)
-  : HeatFluidsDriver(comm, node)
+NekDriver::NekDriver(MPI_Comm comm,
+                     int write_at_timestep,
+                     int write_at_picard_iter,
+                     pugi::xml_node node)
+  : HeatFluidsDriver(comm, write_at_timestep, write_at_picard_iter, node)
 {
   if (active()) {
     casename_ = node.child_value("casename");
@@ -82,8 +85,13 @@ std::vector<double> NekDriver::density_local() const
   return local_densities;
 }
 
-void NekDriver::solve_step()
+void NekDriver::solve_step(int timestep, int iteration)
 {
+  int iostep = INT_MAX;
+  if (timestep % write_at_timestep_ == 0 && iteration % write_at_picard_iter_ == 0) {
+    iostep = 1;
+  }
+  nek_set_iostep(iostep);
   nek_reset_counters();
   C2F_nek_solve();
 }

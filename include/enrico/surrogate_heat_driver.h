@@ -157,7 +157,10 @@ public:
   //!
   //! \param comm  The MPI communicator used to initialze the surrogate
   //! \param node  XML node containing settings for surrogate
-  explicit SurrogateHeatDriver(MPI_Comm comm, pugi::xml_node node);
+  explicit SurrogateHeatDriver(MPI_Comm comm,
+                               int write_at_timestep,
+                               int write_at_picard_iter,
+                               pugi::xml_node node);
 
   //! Verbosity options for printing simulation results
   enum class verbose { NONE, LOW, HIGH };
@@ -180,7 +183,7 @@ public:
   int set_heat_source_at(int32_t local_elem, double heat) override;
 
   //! Solves the heat-fluids surrogate solver
-  void solve_step() final;
+  void solve_step(int timestep, int iteration) final;
 
   void solve_heat();
 

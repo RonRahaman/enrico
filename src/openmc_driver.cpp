@@ -19,8 +19,8 @@
 
 namespace enrico {
 
-OpenmcDriver::OpenmcDriver(MPI_Comm comm)
-  : NeutronicsDriver(comm)
+OpenmcDriver::OpenmcDriver(MPI_Comm comm, int write_at_timestep, int write_at_picard_iter)
+  : NeutronicsDriver(comm, write_at_timestep, write_at_picard_iter)
 {
   if (active()) {
     err_chk(openmc_init(0, nullptr, &comm));
@@ -181,16 +181,18 @@ void OpenmcDriver::init_step()
   err_chk(openmc_simulation_init());
 }
 
-void OpenmcDriver::solve_step()
+void OpenmcDriver::solve_step(int timestep, int iteration)
 {
   err_chk(openmc_run());
 }
 
 void OpenmcDriver::write_step(int timestep, int iteration)
 {
-  std::string filename{"openmc_t" + std::to_string(timestep) + "_i" +
-                       std::to_string(iteration) + ".h5"};
-  err_chk(openmc_statepoint_write(filename.c_str(), nullptr));
+  if (timestep % write_at_timestep_ == 0 && iteration % write_at_picard_iter_ == 0) {
+    std::string filename{"openmc_t" + std::to_string(timestep) + "_i" +
+                         std::to_string(iteration) + ".h5"};
+    err_chk(openmc_statepoint_write(filename.c_str(), nullptr));
+  }
 }
 
 void OpenmcDriver::finalize_step()

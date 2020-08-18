@@ -17,15 +17,22 @@ class Driver {
 public:
   //! Initializes the solver with the given MPI communicator.
   //! \param comm An existing MPI communicator used to initialize the solver
-  explicit Driver(MPI_Comm comm)
+  explicit Driver(MPI_Comm comm, int write_at_timestep, int write_at_picard_iter)
     : comm_(comm)
+    , write_at_timestep_(write_at_timestep)
+    , write_at_picard_iter_(write_at_picard_iter)
   {}
 
   //! Performs the necessary initialization for this solver in one Picard iteration
   virtual void init_step() {}
 
   //! Performs the solve in one Picard iteration
-  virtual void solve_step() {}
+  //! \param timestep timestep index
+  //! \param iteration iteration index
+  virtual void solve_step(int timestep, int iteration){};
+
+  //! Performs the solve in one Picard iteration
+  void solve_step() { this->solve_step(-1, -1); }
 
   //! Write results for physics solve for given timestep and iteration
   //! \param timestep timestep index
@@ -43,6 +50,10 @@ public:
   bool active() const;
 
   Comm comm_; //!< The MPI communicator used to run the solver
+
+  const int write_at_timestep_; //!< Write output at this timestep interval
+
+  const int write_at_picard_iter_; //!< Write output at this interval of Picard iterations
 };
 
 } // namespace enrico

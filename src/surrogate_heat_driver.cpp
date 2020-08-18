@@ -21,8 +21,11 @@ namespace enrico {
 int ChannelFactory::index_ = 0;
 int RodFactory::index_ = 0;
 
-SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm, pugi::xml_node node)
-  : HeatFluidsDriver(comm, node)
+SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm,
+                                         int write_at_timestep,
+                                         int write_at_picard_iter,
+                                         pugi::xml_node node)
+  : HeatFluidsDriver(comm, write_at_timestep, write_at_picard_iter, node)
 {
   // Determine thermal-hydraulic parameters for solid phase
   clad_inner_radius_ = node.child("clad_inner_radius").text().as_double();
@@ -407,7 +410,7 @@ double SurrogateHeatDriver::rod_axial_node_power(const int pin, const int axial)
   return power;
 }
 
-void SurrogateHeatDriver::solve_step()
+void SurrogateHeatDriver::solve_step(int timestep, int iteration)
 {
   if (has_coupling_data()) {
     solve_fluid();
@@ -652,8 +655,14 @@ double SurrogateHeatDriver::fluid_temperature(std::size_t pin, std::size_t axial
 
 void SurrogateHeatDriver::write_step(int timestep, int iteration)
 {
-  if (!has_coupling_data())
+  if (!has_coupling_data()) {
     return;
+  }
+
+  // if output wasn't requested for this timestep or iteration
+  if (timestep % write_at_timestep_ != 0 || iteration % write_at_picard_iter_ != 0) {
+    return;
+  }
 
   // if called, but viz isn't requested for the situation,
   // exit early - no output

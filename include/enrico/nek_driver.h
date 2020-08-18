@@ -24,7 +24,10 @@ public:
   //! NekDriver.
   //!
   //! \param comm  The MPI communicator used to initialze Nek5000
-  explicit NekDriver(MPI_Comm comm, pugi::xml_node xml_root);
+  explicit NekDriver(MPI_Comm comm,
+                     int write_at_timestep,
+                     int write_at_picard_iter,
+                     pugi::xml_node xml_root);
 
   //! Finalizes Nek5000.
   //!
@@ -42,7 +45,7 @@ public:
   //!
   //! A wraper for the nek_solve() routine in libnek5000.  This includes the necessary
   //! initialization and finalization for each step.
-  void solve_step() final;
+  void solve_step(int timestep, int iteration) final;
 
   //! Whether the calling rank has access to the full thermal-hydraulic solution field.
   //! Only Nek's master rank has access to the global data; data on other ranks is empty

@@ -24,7 +24,10 @@ public:
   using cell_type = geometria::Geometry::cell_type;
 
   // Constructor
-  ShiftDriver(MPI_Comm comm, pugi::xml_node node);
+  ShiftDriver(MPI_Comm comm,
+              int write_at_timestep,
+              int write_at_picard_iter,
+              pugi::xml_node node);
 
   //////////////////////////////////////////////////////////////////////////////
   // NeutronicsDriver interface
@@ -81,7 +84,7 @@ public:
   void init_step() final;
 
   //! Runs Shift for one Picard iteration
-  void solve_step() final;
+  void solve_step(int timestep, int iteration) final;
 
 private:
   // Data members

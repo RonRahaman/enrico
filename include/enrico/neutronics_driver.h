@@ -19,8 +19,10 @@ using CellHandle = gsl::index;
 //! Base class for driver that controls a neutronics solve
 class NeutronicsDriver : public Driver {
 public:
-  explicit NeutronicsDriver(MPI_Comm comm)
-    : Driver(comm)
+  explicit NeutronicsDriver(MPI_Comm comm,
+                            int write_at_timestep,
+                            int write_at_picard_iter)
+    : Driver(comm, write_at_timestep, write_at_picard_iter)
   {}
 
   virtual ~NeutronicsDriver() = default;

@@ -6,8 +6,11 @@
 
 namespace enrico {
 
-HeatFluidsDriver::HeatFluidsDriver(MPI_Comm comm, pugi::xml_node node)
-  : Driver(comm)
+HeatFluidsDriver::HeatFluidsDriver(MPI_Comm comm,
+                                   int write_at_timestep,
+                                   int write_at_picard_iter,
+                                   pugi::xml_node node)
+  : Driver(comm, write_at_timestep, write_at_picard_iter)
 {
   pressure_bc_ = node.child("pressure_bc").text().as_double();
   Expects(pressure_bc_ > 0.0);

@@ -11,8 +11,11 @@
 
 namespace enrico {
 
-ShiftDriver::ShiftDriver(MPI_Comm comm, pugi::xml_node node)
-  : NeutronicsDriver{comm}
+ShiftDriver::ShiftDriver(MPI_Comm comm,
+                         int write_at_timestep,
+                         int write_at_picard_iter,
+                         pugi::xml_node node)
+  : NeutronicsDriver{comm, write_at_timestep, write_at_picard_iter}
 {
   if (this->active()) {
     // Get Shift filename
@@ -204,7 +207,7 @@ void ShiftDriver::init_step()
   driver_->rebuild();
 }
 
-void ShiftDriver::solve_step()
+void ShiftDriver::solve_step(int timestep, int iteration)
 {
   driver_->run();
 }

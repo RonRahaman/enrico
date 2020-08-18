@@ -45,8 +45,17 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   max_picard_iter_ = coup_node.child("max_picard_iter").text().as_int();
 
   // get optional coupling parameters, using defaults if not provided
-  if (coup_node.child("epsilon"))
+  if (coup_node.child("epsilon")) {
     epsilon_ = coup_node.child("epsilon").text().as_double();
+  }
+  if (coup_node.child("write_at_timestep")) {
+    write_at_timestep_ = coup_node.child("write_at_timestep").text().as_int();
+    Expects(write_at_timestep_ > 0);
+  }
+  if (coup_node.child("write_at_picard_iter")) {
+    write_at_picard_iter_ = coup_node.child("write_at_picard_iter").text().as_int();
+    Expects(write_at_picard_iter_ > 0);
+  }
 
   // Determine relaxation parameters for heat source, temperature, and density
   auto set_alpha = [](pugi::xml_node node, double& alpha) {
@@ -125,10 +134,12 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   // Instantiate neutronics driver
   std::string neut_driver = neut_node.child_value("driver");
   if (neut_driver == "openmc") {
-    neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm.comm);
+    neutronics_driver_ = std::make_unique<OpenmcDriver>(
+      neutronics_comm.comm, write_at_timestep_, write_at_picard_iter_);
   } else if (neut_driver == "shift") {
 #ifdef USE_SHIFT
-    neutronics_driver_ = std::make_unique<ShiftDriver>(comm, neut_node);
+    neutronics_driver_ = std::make_unique<ShiftDriver>(
+      comm, write_at_timestep_, write_at_picard_iter_, neut_node);
 #else
     throw std::runtime_error{"ENRICO has not been built with Shift support enabled."};
 #endif
@@ -140,13 +151,14 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   std::string s = heat_node.child_value("driver");
   if (s == "nek5000") {
 #ifdef USE_NEK
-    heat_fluids_driver_ = std::make_unique<NekDriver>(heat_comm.comm, heat_node);
+    heat_fluids_driver_ = std::make_unique<NekDriver>(
+      heat_comm.comm, write_at_timestep_, write_at_picard_iter_, heat_node);
 #else
     throw std::runtime_error{"nek5000 was specified as a solver, but is not enabled in this build of ENRICO"};
 #endif
   } else if (s == "surrogate") {
-    heat_fluids_driver_ =
-      std::make_unique<SurrogateHeatDriver>(heat_comm.comm, heat_node);
+    heat_fluids_driver_ = std::make_unique<SurrogateHeatDriver>(
+      heat_comm.comm, write_at_timestep_, write_at_picard_iter_, heat_node);
   } else {
     throw std::runtime_error{"Invalid value for <heat_fluids><driver>"};
   }
@@ -195,7 +207,7 @@ void CoupledDriver::execute()
 
       if (neutronics.active()) {
         neutronics.init_step();
-        neutronics.solve_step();
+        neutronics.solve_step(i_timestep_, i_picard_);
         neutronics.write_step(i_timestep_, i_picard_);
         neutronics.finalize_step();
       }
@@ -209,7 +221,7 @@ void CoupledDriver::execute()
 
       if (heat.active()) {
         heat.init_step();
-        heat.solve_step();
+        heat.solve_step(i_timestep_, i_picard_);
         heat.write_step(i_timestep_, i_picard_);
         heat.finalize_step();
       }

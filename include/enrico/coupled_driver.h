@@ -94,6 +94,10 @@ public:
 
   int max_picard_iter_; //!< Maximum number of Picard iterations
 
+  int write_at_timestep_{1}; //!< Write output at this timestep interval
+
+  int write_at_picard_iter_{1}; //!< Write output at this interval of Picard iterations
+
   //! Picard iteration convergence tolerance, defaults to 1e-3 if not set
   double epsilon_{1e-3};
 

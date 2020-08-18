@@ -16,7 +16,10 @@ namespace enrico {
 //! Base class for driver that controls a heat-fluids solve
 class HeatFluidsDriver : public Driver {
 public:
-  explicit HeatFluidsDriver(MPI_Comm comm, pugi::xml_node node);
+  explicit HeatFluidsDriver(MPI_Comm comm,
+                            int write_at_timestep,
+                            int write_at_picard_iter,
+                            pugi::xml_node node);
 
   virtual ~HeatFluidsDriver() = default;
 

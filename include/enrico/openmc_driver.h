@@ -22,7 +22,7 @@ class OpenmcDriver : public NeutronicsDriver {
 public:
   //! One-time initalization of OpenMC and member variables
   //! \param comm An existing MPI communicator used to inialize OpenMC
-  explicit OpenmcDriver(MPI_Comm comm);
+  explicit OpenmcDriver(MPI_Comm comm, int write_at_timestep_, int write_at_picard_iter_);
 
   //! One-time finalization of OpenMC
   ~OpenmcDriver();
@@ -83,7 +83,7 @@ public:
   void init_step() final;
 
   //! Runs OpenMC for one Picard iteration
-  void solve_step() final;
+  void solve_step(int timestep, int iteration) final;
 
   //! Writes OpenMC output for given timestep and iteration
   //! \param timestep timestep index
