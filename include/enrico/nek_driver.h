@@ -131,6 +131,7 @@ private:
 
   int32_t nelgt_; //!< total number of mesh elements
   int32_t nelt_;  //!< number of local mesh elements
+  int32_t iostep_; //!< interval of Nek (pseudo-)timestepts to output
 };
 
 } // namespace enrico

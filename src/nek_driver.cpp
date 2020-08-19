@@ -31,6 +31,7 @@ NekDriver::NekDriver(MPI_Comm comm,
 
     nelgt_ = nek_get_nelgt();
     nelt_ = nek_get_nelt();
+    iostep_ = nek_get_iostep();
 
     init_displs();
   }
@@ -87,11 +88,12 @@ std::vector<double> NekDriver::density_local() const
 
 void NekDriver::solve_step(int timestep, int iteration)
 {
-  int iostep = INT_MAX;
   if (timestep % write_at_timestep_ == 0 && iteration % write_at_picard_iter_ == 0) {
-    iostep = 1;
+    nek_set_iostep(iostep_);
   }
-  nek_set_iostep(iostep);
+  else {
+    nek_set_iostep(INT_MAX);
+  }
   nek_reset_counters();
   C2F_nek_solve();
 }
