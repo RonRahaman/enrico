@@ -13,7 +13,7 @@ node {
         'https://github.com/RonRahaman/enrico.git']]])
     }
     stage('before_install') {
-      sh "${WORKSPACE}/enrico/ci/patch_singlerod_input.sh"
+      sh "${WORKSPACE}/ci/patch_singlerod_input.sh"
     }
   }
 }
