@@ -15,5 +15,18 @@ node {
     stage('before_install') {
       sh "${WORKSPACE}/ci/patch_singlerod_input.sh"
     }
+    stage('install') {
+      sh "${WORKSPACE}/ci/cmake_singlerod.sh"
+      sh "${WORKSPACE}/ci/build_singlerod.sh"
+      sh "${WORKSPACE}/ci/build_unittests.sh"
+    }
+    stage('before_script') {
+      sh "${WORKSPACE}/ci/download_xs.sh"
+      sh "${WORKSPACE}/ci/unzip_singlerod_statefile.sh"
+    }
+    stage('test') {
+      sh "${WORKSPACE}/ci/singlerod_matrix.sh"
+      sh "${WORKSPACE}/ci/test_unittests.sh"
+    }
   }
 }
