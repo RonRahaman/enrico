@@ -1,4 +1,4 @@
-node {
+node('bigmem') {
   withEnv(["OMP_NUM_THREADS=2",
            "OPENMC_CROSS_SECTIONS=${env.HOME}/endfb71_hdf5/cross_sections.xml",
            "MODE=openmc_nek5000",
