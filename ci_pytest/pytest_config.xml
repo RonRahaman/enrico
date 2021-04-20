@@ -1,11 +1,14 @@
 <tests>
   <drivers neutronics="openmc" heat_fluids="nek5000">
-    <case name="shortrod" dir="tests/singlerod/short/openmc_nek5000"/>
+    <case name="shortrod" dir="tests/singlerod/short/openmc_nek5000"
+          restart="tests/singlerod/short/nek5000/rodcht.run01.tgz"/>
   </drivers>
 
-  <drivers neutronics="openmc" heat_fluids="nekrs">
-    <case name="shortrod" dir="tests/singlerod/short/openmc_nekrs"/>
-  </drivers>
+  <!--
+    <drivers neutronics="openmc" heat_fluids="nekrs">
+      <case name="shortrod" dir="tests/singlerod/short/openmc_nekrs"/>
+    </drivers>
+  -->
 
   <drivers neutronics="openmc" heat_fluids="heat_surrogate">
     <case name="shortrod" dir="tests/singlerod/short/openmc_heat_surrogate"/>
