@@ -9,9 +9,11 @@ CaseParam = namedtuple('CaseParam',
 
 
 def pytest_generate_tests(metafunc):
+
     # For each case, get its name, directory, and CMake options
     root = ElementTree.parse("ci_pytest/pytest_config.xml").getroot()
     argvalues = []
+    ids = []
     for drivers in root.findall("drivers"):
         neutronics_driver = drivers.get("neutronics")
         heat_fluids_driver = drivers.get("heat_fluids")
@@ -31,10 +33,9 @@ def pytest_generate_tests(metafunc):
                 casename=casename,
                 casedir=casedir,
                 cmake_opts=cmake_opts))
+            ids.append(f"{neutronics_driver} + {heat_fluids_driver} : {casename}")
 
-    metafunc.parametrize("case_param", argvalues)
-    metafunc.parametrize("make", argvalues, indirect=True)
-    metafunc.parametrize("cmake", argvalues, indirect=True)
+    metafunc.parametrize("run_cmake", argvalues, ids=ids, indirect=True)
 
 
 @pytest.fixture(scope="module")
@@ -51,16 +52,18 @@ def patch_nek_input():
     print("<<< unzip nek input >>>")
 
 
-@pytest.fixture(scope="function")
-def cmake(request):
-    cmake_cmd = f"From fixture CMAKE: {request.param}"
-    print(cmake_cmd)
+@pytest.fixture
+def run_cmake(request):
+    print(request.param)
+    return request.param
 
 
-@pytest.fixture(scope="function")
-def make(request, cmake):
-    print(f"From fixture MAKE: {request.param}")
+@pytest.fixture
+def run_make(run_cmake):
+    print(run_cmake)
+    return run_cmake
 
 
-def test_run(case_param, make):
-    print(f"From func test_run: {case_param}")
+def test_run(run_make):
+    print(run_make)
+    assert True
