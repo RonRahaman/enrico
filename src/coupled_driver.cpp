@@ -307,7 +307,7 @@ void CoupledDriver::update_heat_source(bool relax)
     std::copy(cell_heat_.cbegin(), cell_heat_.cend(), cell_heat_prev_.begin());
   }
 
-  decltype(cells_) cells_recv;
+  decltype(local_to_global_cell_) cells_recv;
   decltype(cell_heat_) cell_heat_send;
   xt::xtensor<double, 1> all_cell_heat;
 
@@ -322,7 +322,7 @@ void CoupledDriver::update_heat_source(bool relax)
   // The neutronics root sends the cell-averaged heat sources to the heat ranks.
   // Each heat rank gets only the heat sources for its local cells.
   for (const auto& heat_rank : heat_ranks_) {
-    comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
+    comm_.send_and_recv(cells_recv, neutronics_root_, local_to_global_cell_, heat_rank);
     cell_heat_send.resize({cells_recv.size()});
     if (comm_.rank == neutronics_root_) {
       for (gsl::index i = 0; i < cells_recv.size(); ++i) {
@@ -343,8 +343,9 @@ void CoupledDriver::update_heat_source(bool relax)
         cell_heat_ = alpha_ * cell_heat_ + (1.0 - alpha_) * cell_heat_prev_;
       }
     }
-    for (gsl::index i = 0; i < cells_.size(); ++i) {
-      for (const auto& e : cell_to_elems_.at(cells_.at(i))) {
+    for (gsl::index i = 0; i < local_to_global_cell_.size(); ++i) {
+      auto cell = local_to_global_cell_.at(i);
+      for (const auto& e : cell_to_elems_.at(cell)) {
         heat.set_heat_source_at(e, cell_heat_.at(i));
       }
     }
@@ -357,73 +358,77 @@ void CoupledDriver::update_temperature(bool relax)
   auto& neutronics = this->get_neutronics_driver();
   auto& heat = this->get_heat_driver();
 
-  // Step 1: On each heat rank, assign the current iterate of local cell-avged T
-  // to the previous iterate
-  if (relax && heat.active()) {
-    std::copy(cell_temperatures_.begin(),
-              cell_temperatures_.end(),
-              cell_temperatures_prev_.begin());
+  // Step 1: On each neutronics rank, assign current iterate of cell T to previous
+  if (relax && neutronics.active()) {
+    cell_temperatures_prev_ = cell_temperatures_;
   }
 
-  // Step 2: On each heat, compute cell-avged T
+  // Step 2: On each heat rank, compute local cell T
+  xt::xtensor<double, 1> local_cell_temperatures;
   if (heat.active()) {
     auto elem_temperatures = heat.temperature_local();
-    for (gsl::index i = 0; i < cells_.size(); ++i) {
+    for (gsl::index i = 0; i < local_to_global_cell_.size(); ++i) {
+      auto cell = local_to_global_cell_.at(i);
       double T_avg = 0.0;
-      double V_tot = 0.0;
-      for (const auto& e : cell_to_elems_.at(cells_.at(i))) {
-        double T = elem_temperatures.at(e);
-        double V = elem_volumes_.at(e);
-        T_avg += T * V;
-        V_tot += V;
+      for (const auto& e : cell_to_elems_.at(cell)) {
+        T_avg += elem_temperatures.at(e) * elem_volumes_.at(e);
       }
-      T_avg /= V_tot;
+      T_avg /= local_cell_volumes_.at(i);
       Ensures(T_avg > 0.0);
-      cell_temperatures_.at(i) = T_avg;
-    }
-    // Apply relaxation to local cell-avged T
-    if (relax) {
-      if (alpha_T_ == ROBBINS_MONRO) {
-        int n = i_picard_ + 1;
-        cell_temperatures_ =
-          cell_temperatures_ / n + (1. - 1. / n) * cell_temperatures_prev_;
-      } else {
-        cell_temperatures_ =
-          alpha_T_ * cell_temperatures_ + (1.0 - alpha_T_) * cell_temperatures_prev_;
-      }
+      local_cell_temperatures.at(i) = T_avg;
     }
   }
 
-  // Step 3: On each neutron rank, accumulate cell-avged volumes from all heat ranks
+  // Step 3: On each neutron rank, accumulate local cell T from all heat ranks
   std::unordered_map<CellHandle, double> T_dot_V;
-  std::unordered_map<CellHandle, double> cell_V;
-  decltype(cells_) cells_recv;
-  decltype(cell_volumes_) cell_volumes_recv;
-  decltype(cell_temperatures_) cell_temperatures_recv;
+  decltype(local_to_global_cell_) cells_recv;
+  decltype(local_cell_volumes_) local_cell_volumes_recv;
+  decltype(local_cell_temperatures) local_cell_temperatures_recv;
+
   for (const auto& heat_rank : heat_ranks_) {
-    comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
+    comm_.send_and_recv(cells_recv, neutronics_root_, local_to_global_cell_, heat_rank);
     neutronics.comm_.broadcast(cells_recv);
 
     comm_.send_and_recv(
-      cell_temperatures_recv, neutronics_root_, cell_temperatures_, heat_rank);
-    neutronics.comm_.broadcast(cell_temperatures_recv);
+      local_cell_temperatures_recv, neutronics_root_, local_cell_temperatures, heat_rank);
+    neutronics.comm_.broadcast(local_cell_temperatures_recv);
 
-    comm_.send_and_recv(cell_volumes_recv, neutronics_root_, cell_volumes_, heat_rank);
-    neutronics.comm_.broadcast(cell_volumes_recv);
+    comm_.send_and_recv(
+      local_cell_volumes_recv, neutronics_root_, local_cell_volumes_, heat_rank);
+    neutronics.comm_.broadcast(local_cell_volumes_recv);
 
     if (neutronics.active()) {
       for (gsl::index i = 0; i < cells_recv.size(); ++i) {
-        auto T = cell_temperatures_recv.at(i);
-        auto V = cell_volumes_recv.at(i);
-        cell_V[cells_recv.at(i)] += V;
-        T_dot_V[cells_recv.at(i)] += T * V;
+        auto T = local_cell_temperatures_recv.at(i);
+        auto V = local_cell_volumes_recv.at(i);
+        T_dot_V.at(cells_recv.at(i)) += T * V;
       }
     }
   }
-  for (const auto& kv : T_dot_V) {
-    auto cell = kv.first;
-    auto tv = kv.second;
-    neutronics.set_temperature(cell, tv / cell_V.at(cell));
+
+  if (neutronics.active()) {
+    for (const auto& kv : cell_temperatures_) {
+      auto cell = kv.first;
+
+      // Compute temperature
+      cell_temperatures_.at(cell) = T_dot_V.at(cell) / neutronics.get_volume(cell);
+
+      // Apply relaxation
+      if (relax) {
+        if (alpha_T_ == ROBBINS_MONRO) {
+          int n = i_picard_ + 1;
+          cell_temperatures_.at(cell) = cell_temperatures_.at(cell) / n +
+                                        (1. - 1. / n) * cell_temperatures_prev_.at(cell);
+        } else {
+          cell_temperatures_.at(cell) =
+            alpha_T_ * cell_temperatures_.at(cell) +
+            (1.0 - alpha_T_) * cell_temperatures_prev_.at(cell);
+        }
+      }
+
+      // Set temperature
+      neutronics.set_density(cell, cell_temperatures_.at(cell));
+    }
   }
 }
 
@@ -435,74 +440,84 @@ void CoupledDriver::update_density(bool relax)
 
   // Step 1: On each heat rank, assign the current iterate of local cell-avged rho
   // to the previous iterate
-  if (relax && heat.active()) {
+  if (relax && neutronics.active()) {
     std::copy(cell_densities_.cbegin(), cell_densities_.cend(), cell_densities_.begin());
   }
 
-  // Step 2: On each heat, compute cell-avged rho
+  // Step 2: On each heat, compute local cell rho
+  xt::xtensor<double, 1> local_cell_densities;
   if (heat.active()) {
     auto elem_densities = heat.density_local();
-
-    for (gsl::index i = 0; i < cells_.size(); ++i) {
-      if (cell_fluid_mask_.at(i) == 1) {
+    for (gsl::index i = 0; i < local_to_global_cell_.size(); ++i) {
+      auto cell = local_to_global_cell_.at(i);
+      if (local_cell_fluid_mask_.at(i) == 1) {
         double rho_avg = 0.0;
-        double V_tot = 0.0;
-        for (const auto& e : cell_to_elems_.at(cells_.at(i))) {
+        for (const auto& e : cell_to_elems_.at(cell)) {
           rho_avg += elem_densities.at(e) * elem_volumes_.at(e);
-          V_tot += elem_volumes_.at(e);
         }
-        rho_avg /= V_tot;
+        rho_avg /= local_cell_volumes_.at(i);
         Ensures(rho_avg > 0.0);
-        cell_densities_.at(i) = rho_avg;
-      }
-    }
-    if (relax) {
-      if (alpha_rho_ == ROBBINS_MONRO) {
-        int n = i_picard_ + 1;
-        cell_densities_ = cell_densities_ / n + (1. - 1. / n) * cell_densities_prev_;
-      } else {
-        cell_densities_ =
-          alpha_rho_ * cell_densities_ + (1.0 - alpha_rho_) * cell_densities_prev_;
+        local_cell_densities.at(i) = rho_avg;
       }
     }
   }
 
   // Step 3: On each neutron rank, accumulate cell-avged volumes from all heat ranks
   std::map<CellHandle, double> rho_dot_V;
-  std::map<CellHandle, double> cell_V;
-  decltype(cells_) cells_recv;
-  decltype(cell_volumes_) cell_volumes_recv;
-  decltype(cell_densities_) cell_densities_recv;
-  decltype(cell_fluid_mask_) cell_fluid_mask_recv;
+  decltype(local_to_global_cell_) cells_recv;
+  decltype(local_cell_volumes_) local_cell_volumes_recv;
+  decltype(local_cell_densities) local_cell_densities_recv;
+  decltype(local_cell_fluid_mask_) local_cell_fluid_mask_recv;
 
   for (const auto& heat_rank : heat_ranks_) {
-    comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
+    comm_.send_and_recv(cells_recv, neutronics_root_, local_to_global_cell_, heat_rank);
     neutronics.comm_.broadcast(cells_recv);
 
-    comm_.send_and_recv(cell_volumes_recv, neutronics_root_, cell_volumes_, heat_rank);
-    neutronics.comm_.broadcast(cell_volumes_recv);
+    comm_.send_and_recv(
+      local_cell_volumes_recv, neutronics_root_, local_cell_volumes_, heat_rank);
+    neutronics.comm_.broadcast(local_cell_volumes_recv);
 
     comm_.send_and_recv(
-      cell_densities_recv, neutronics_root_, cell_densities_, heat_rank);
-    neutronics.comm_.broadcast(cell_densities_recv);
+      local_cell_densities_recv, neutronics_root_, local_cell_densities, heat_rank);
+    neutronics.comm_.broadcast(local_cell_densities_recv);
 
     comm_.send_and_recv(
-      cell_fluid_mask_recv, neutronics_root_, cell_fluid_mask_, heat_rank);
-    neutronics.comm_.broadcast(cell_fluid_mask_recv);
+      local_cell_fluid_mask_recv, neutronics_root_, local_cell_fluid_mask_, heat_rank);
+    neutronics.comm_.broadcast(local_cell_fluid_mask_recv);
 
     if (neutronics.active()) {
       for (gsl::index i = 0; i < cells_recv.size(); ++i) {
-        if (cell_fluid_mask_recv.at(i) == 1) {
-          auto rho = cell_densities_recv.at(i);
-          auto V = cell_volumes_recv.at(i);
-          cell_V[cells_recv.at(i)] += V;
-          rho_dot_V[cells_recv.at(i)] += rho * V;
+        if (local_cell_fluid_mask_recv.at(i) == 1) {
+          auto rho = local_cell_densities_recv.at(i);
+          auto V = local_cell_volumes_recv.at(i);
+          rho_dot_V.at(cells_recv.at(i)) += rho * V;
         }
       }
     }
   }
-  for (const auto& kv : rho_dot_V) {
-    neutronics.set_density(kv.first, kv.second / cell_V.at(kv.first));
+
+  if (neutronics.active()) {
+    for (const auto& kv : cell_densities_) {
+      auto cell = kv.first;
+
+      // Compute density
+      cell_densities_.at(cell) = rho_dot_V.at(cell) / neutronics.get_volume(cell);
+
+      // Apply relaxation
+      if (relax) {
+        if (alpha_rho_ == ROBBINS_MONRO) {
+          int n = i_picard_ + 1;
+          cell_densities_.at(cell) =
+            cell_densities_.at(cell) / n + (1. - 1. / n) * cell_densities_prev_.at(cell);
+        } else {
+          cell_densities_.at(cell) = alpha_rho_ * cell_densities_.at(cell) +
+                                     (1.0 - alpha_rho_) * cell_densities_prev_.at(cell);
+        }
+      }
+
+      // Set density
+      neutronics.set_density(cell, cell_densities_.at(cell));
+    }
   }
 }
 
@@ -518,21 +533,26 @@ void CoupledDriver::init_mappings()
   decltype(elem_to_cell_) elem_to_cell_send;
 
   for (const auto& heat_rank : heat_ranks_) {
-    // For the given heat rank, the neutronics root discovers the mapping of
-    // local elem ID --> global cell handle.
-    // * IMPORTANT: OpenmcDriver::find adds the cell instances it discovers to
-    //   the OpenmcDriver::cells_ array of the calling rank only.  However, every
-    //   neutronics rank needs the full array of cells_ for Openmc::create_tallies.
-    //   Hence, we broadcast the centroids to all neutronics ranks and then
-    //   call neutronics.find on each neutronics rank.
+    // For each heat rank:
+    // * Neutron root discovers the global cell IDs corresponding to the local elems
+    // * Neutron root sends the discovered global cell IDs back
+    // * Neutron root adds the global cell IDs to its set of global cell IDs
+
+    // IMPORTANT: OpenmcDriver::find adds the cell instances it discovers to
+    //  the OpenmcDriver::cells_ array of the calling rank only.  However, every
+    //  neutronics rank needs the full array of cells_ for Openmc::create_tallies.
+    //  Hence, we broadcast the centroids to all neutronics ranks and then
+    //  call neutronics.find on each neutronics rank.
     if (comm_.rank == heat_rank) {
       centroids_send = heat.centroid_local();
     }
     this->comm_.send_and_recv(
       centroids_recv, neutronics_root_, centroids_send, heat_rank);
     neutronics.comm_.broadcast(centroids_recv);
+
     if (neutronics.comm_.active()) {
       elem_to_cell_send = neutronics.find(centroids_recv);
+      global_cells_.insert(elem_to_cell_send.cbegin(), elem_to_cell_send.cend());
     }
 
     // The neutronics root send the mapping of local elem ID --> global cell handle
@@ -551,7 +571,7 @@ void CoupledDriver::init_mappings()
     // The heat rank creates an array global cell handles for its local cells.
     // This is useful in the coupling.
     for (const auto& kv : cell_to_elems_) {
-      cells_.push_back(kv.first);
+      local_to_global_cell_.push_back(kv.first);
     }
   }
 }
@@ -572,29 +592,9 @@ void CoupledDriver::init_temperatures()
   const auto& neutronics = this->get_neutronics_driver();
   const auto& heat = this->get_heat_driver();
 
-  // Every heat rank keeps track of its own local cell T
-  if (heat.active()) {
-    auto sz = static_cast<unsigned long>(cells_.size());
-    cell_temperatures_.resize({sz});
-    cell_temperatures_prev_.resize({sz});
-  }
-
   if (temperature_ic_ == Initial::neutronics) {
-    // Send and recv buffers
-    decltype(cells_) cells_recv;
-    decltype(cell_temperatures_) cell_temperatures_send;
-    // The neutronics root sends cell T to each heat rank
-    for (const auto& heat_rank : heat_ranks_) {
-      comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
-      if (comm_.rank == neutronics_root_) {
-        const auto sz = static_cast<unsigned long>(cells_recv.size());
-        cell_temperatures_send.resize({sz});
-        for (gsl::index i = 0; i < sz; ++i) {
-          cell_temperatures_send.at(i) = neutronics.get_temperature(cells_recv.at(i));
-        }
-      }
-      comm_.send_and_recv(
-        cell_temperatures_, heat_rank, cell_temperatures_send, neutronics_root_);
+    for (const auto& c : global_cells_) {
+      cell_temperatures_.at(c) = neutronics.get_temperature(c);
     }
   } else if (temperature_ic_ == Initial::heat) {
     //  We do not want to apply underrelaxation here since, at this point, there is no
@@ -602,11 +602,8 @@ void CoupledDriver::init_temperatures()
     update_temperature(false);
   }
 
-  // In both cases, only temperatures_ was set, so we explicitly set temperatures_prev_
-  if (heat.active()) {
-    std::copy(cell_temperatures_.begin(),
-              cell_temperatures_.end(),
-              cell_temperatures_prev_.begin());
+  if (neutronics.active()) {
+    cell_temperatures_prev_ = cell_temperatures_;
   }
 }
 
@@ -618,12 +615,12 @@ void CoupledDriver::init_volumes()
 
   if (heat.active()) {
     elem_volumes_ = heat.volume_local();
-    for (const auto& c : cells_) {
+    for (const auto& c : local_to_global_cell_) {
       double V = 0.0;
       for (const auto& e : cell_to_elems_.at(c)) {
         V += elem_volumes_.at(e);
       }
-      cell_volumes_.push_back(V);
+      local_cell_volumes_.push_back(V);
     }
   }
 }
@@ -638,10 +635,11 @@ void CoupledDriver::check_volumes()
 
   // Get all local cell volumes from heat ranks and sum them into the global cell volumes.
   for (const auto& heat_rank : heat_ranks_) {
-    decltype(cells_) cells_recv;
-    decltype(cell_volumes_) cell_volumes_recv;
-    comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
-    comm_.send_and_recv(cell_volumes_recv, neutronics_root_, cell_volumes_, heat_rank);
+    decltype(local_to_global_cell_) cells_recv;
+    decltype(local_cell_volumes_) cell_volumes_recv;
+    comm_.send_and_recv(cells_recv, neutronics_root_, local_to_global_cell_, heat_rank);
+    comm_.send_and_recv(
+      cell_volumes_recv, neutronics_root_, local_cell_volumes_, heat_rank);
     if (comm_.rank == neutronics_root_) {
       for (gsl::index i = 0; i < cells_recv.size(); ++i) {
         glob_volumes[cells_recv.at(i)] += cell_volumes_recv.at(i);
@@ -669,26 +667,11 @@ void CoupledDriver::init_densities()
   const auto& neutronics = this->get_neutronics_driver();
   const auto& heat = this->get_heat_driver();
 
-  if (heat.active()) {
-    auto sz = static_cast<unsigned long>(cells_.size());
-    cell_densities_.resize({sz});
-    cell_densities_prev_.resize({sz});
-  }
-
   if (density_ic_ == Initial::neutronics) {
-    decltype(cells_) cells_recv;
-    decltype(cell_densities_) cell_densities_send;
-    for (const auto& heat_rank : heat_ranks_) {
-      comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
-      if (comm_.rank == neutronics_root_) {
-        const auto sz = static_cast<unsigned long>(cells_recv.size());
-        cell_densities_send.resize({sz});
-        for (gsl::index i = 0; i < sz; ++i) {
-          cell_densities_send.at(i) = neutronics.get_density(cells_recv.at(i));
-        }
+    if (neutronics.active()) {
+      for (const auto& c : global_cells_) {
+        cell_densities_.at(c) = neutronics.get_density(c);
       }
-      comm_.send_and_recv(
-        cell_densities_, heat_rank, cell_densities_send, neutronics_root_);
     }
   } else if (density_ic_ == Initial::heat) {
     // * We do not want to apply underrelaxation here (and at this point,
@@ -696,10 +679,8 @@ void CoupledDriver::init_densities()
     update_density(false);
   }
 
-  // In both cases, we need to explicitly set densities_prev_
-  if (heat.active()) {
-    std::copy(
-      cell_densities_.cbegin(), cell_densities_.cend(), cell_densities_prev_.begin());
+  if (neutronics.active()) {
+    cell_densities_prev_ = cell_densities_;
   }
 }
 
@@ -720,7 +701,7 @@ void CoupledDriver::init_fluid_mask()
                                    "fluid and solid T/H elements.");
         }
       }
-      cell_fluid_mask_.push_back(in_fluid);
+      local_cell_fluid_mask_.push_back(in_fluid);
     }
   }
 }
@@ -730,7 +711,7 @@ void CoupledDriver::init_heat_source()
   comm_.message("Initializing heat source");
 
   if (this->heat_fluids_driver_->active()) {
-    auto sz = {cells_.size()};
+    auto sz = {local_to_global_cell_.size()};
     cell_heat_ = xt::empty<double>(sz);
     cell_heat_prev_ = xt::empty<double>(sz);
   }

@@ -11,8 +11,9 @@
 #include <pugixml.hpp>
 #include <xtensor/xtensor.hpp>
 
-#include <map>
 #include <memory> // for unique_ptr
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace enrico {
@@ -168,17 +169,17 @@ private:
   //! List of ranks in this->comm_ that are in the neutronics subcomm
   std::vector<int> neutronics_ranks_;
 
-  //! Current Picard iteration temperature for the local cells in each heat rank
-  xt::xtensor<double, 1> cell_temperatures_;
+  ////! Current Picard iteration's temperature for global cells on each neutronics rank
+  std::unordered_map<CellHandle, double> cell_temperatures_;
 
-  //! Previous Picard iteration temperature for the local cells in each heat/fluids rank.
-  xt::xtensor<double, 1> cell_temperatures_prev_;
+  //! Previous Picard iteration temperature for the global cells in each neutronics rank.
+  std::unordered_map<CellHandle, double> cell_temperatures_prev_;
 
-  //! Current Picard iteration density for the local cells in each heat/fluids rank
-  xt::xtensor<double, 1> cell_densities_;
+  //! Current Picard iteration density for the global cells in each neutronics rank
+  std::unordered_map<CellHandle, double> cell_densities_;
 
-  //! Previous Picard iteration density for the local cells in each heat/fluids rank
-  xt::xtensor<double, 1> cell_densities_prev_;
+  //! Previous Picard iteration density for the global cells in each neutronics rank
+  std::unordered_map<CellHandle, double> cell_densities_prev_;
 
   //! Current Picard iteration heat source for the local cells in each heat/fluids rank
   xt::xtensor<double, 1> cell_heat_;
@@ -191,15 +192,17 @@ private:
 
   //! States whether a local cell is in the fluid region. Set only on heat/fluids ranks.
   //! Ordered the same way as cells_, cell_fluid_mask_, and cell_to_elems_
-  std::vector<int> cell_fluid_mask_;
+  std::vector<int> local_cell_fluid_mask_;
 
   //! Maps heat/fluids element to global cell ID.  Set only on heat/fluids ranks.
   std::vector<CellHandle> elem_to_cell_;
 
+  std::unordered_set<CellHandle> global_cells_;
+
   //! Lists the global cell IDs of all local cells in a the heat/fluids rank.
   //! Set only on heat/fluids ranks.  Ordered the same way as cell_volumes_,
   //! cells_fluid_mask_, and cell_to_elems_
-  std::vector<CellHandle> cells_;
+  std::vector<CellHandle> local_to_global_cell_;
 
   //! Maps global cell handle to local elements.  Set only on heat/fluids ranks.
   //! Ordered the same way as cells_, cell_volumes_, and cell_fluid_mask_
@@ -207,7 +210,7 @@ private:
 
   //! Volumes of local cells.  Set only on heat/fluids ranks. Ordered the same way
   //! as cells_, cell_fluid_mask_, and cell_to_elems_
-  std::vector<double> cell_volumes_;
+  std::vector<double> local_cell_volumes_;
 
   //! Volumes of local elements.  Set only on heat/fluids ranks.
   std::vector<double> elem_volumes_;
