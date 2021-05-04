@@ -46,7 +46,6 @@ private:
   int tstep_;
   int n_local_elem_;
   std::size_t n_global_elem_;
-  int poly_deg_;
   int n_gll_;
 
   // TODO: These assume the default values of dfloat, dlong, and hlong in
@@ -57,7 +56,7 @@ private:
   const double* temperature_;
   const double* rho_cp_;
   const int* element_info_;
-  std::vector<double> mass_matrix_;
+  const double* mass_matrix_;
 
   nrs_t* nrs_ptr_;
 
