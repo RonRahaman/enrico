@@ -29,19 +29,22 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
         0 /* buildOnly */, 
         0 /* sizeTarget */, 
         0 /* ciMode */, 
-        "" /* cacheDir */, 
-        setup_file_ /* _setupFile */, 
-        "" /* backend_ */, 
-        "" /* _deviceId */);
+        "" /* cacheDir */,
+                 setup_file_ /* _setupFile */,
+                 "" /* backend_ */,
+                 "" /* _deviceId */);
 
-    nrs_ptr_ = reinterpret_cast<nrs_t *>(nekrs::nrsPtr());
-
-    open_lib_udf();
+    nrs_ptr_ = reinterpret_cast<nrs_t*>(nekrs::nrsPtr());
 
     // Check that we're running a CHT simulation.
     err_chk(nrs_ptr_->cht == 1,
             "NekRS simulation is not setup for conjugate-heat transfer (CHT).  "
             "ENRICO must be run with a CHT simulation.");
+
+    // Check that we have enough passive scalars
+    err_chk(nrs_ptr_->cds->NSfields >= 2,
+            "For coupling, nekRS must have at least 2 passive scalars.  "
+            "The first is used for local heat source and should be unsolved.");
 
     // Local and global element counts
     n_local_elem_ = nrs_ptr_->cds->mesh->Nelements;
@@ -61,6 +64,7 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
     rho_cp_ = &nrs_ptr_->cds->prop[nrs_ptr_->cds->fieldOffset];
 
     temperature_ = nrs_ptr_->cds->S;
+    localq_ = &nrs_ptr_->cds->S[nrs_ptr_->cds->fieldOffset * sizeof(dfloat)];
 
     // Construct lumped mass matrix from vgeo
     // See cdsSetup in vendor/nekRS/src/core/insSetup.cpp
@@ -76,12 +80,6 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
 
     init_displs();
   }
-}
-
-void NekRSDriver::init_step()
-{
-  auto min = std::min_element(localq_->cbegin(), localq_->cend());
-  auto max = std::max_element(localq_->cbegin(), localq_->cend());
 }
 
 void NekRSDriver::solve_step()
@@ -248,34 +246,9 @@ std::vector<int> NekRSDriver::fluid_mask_local() const
 int NekRSDriver::set_heat_source_at(int32_t local_elem, double heat)
 {
   for (int i = 0; i < n_gll_; ++i) {
-    localq_->at(local_elem * n_gll_ + i) = heat;
+    localq_[local_elem * n_gll_ + i] = heat;
   }
   return 0;
-}
-
-void NekRSDriver::open_lib_udf()
-{
-  lib_udf_handle_ = dlopen(lib_udf_name_.c_str(), RTLD_LAZY);
-  if (!lib_udf_handle_) {
-    std::stringstream msg;
-    msg << "dlopen error for localq in " << lib_udf_name_ << " : " << dlerror();
-    throw std::runtime_error(msg.str());
-  }
-  void* localq_void = dlsym(lib_udf_handle_, "localq");
-  if (dlerror()) {
-    throw std::runtime_error("dlsym error for localq in " + lib_udf_name_);
-  }
-  localq_ = reinterpret_cast<std::vector<double>*>(localq_void);
-}
-
-void NekRSDriver::close_lib_udf()
-{
-  err_chk(dlclose(lib_udf_handle_), "dlclose error for " + lib_udf_name_);
-}
-
-NekRSDriver::~NekRSDriver()
-{
-  close_lib_udf();
 }
 
 }

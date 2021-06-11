@@ -11,9 +11,6 @@ class NekRSDriver : public HeatFluidsDriver {
 public:
   NekRSDriver(MPI_Comm comm, pugi::xml_node node);
 
-  ~NekRSDriver();
-
-  void init_step() override;
   void solve_step() override;
   void write_step(int timestep, int iteration) override;
 
@@ -36,9 +33,6 @@ private:
   std::vector<double> density_local() const override;
   std::vector<int> fluid_mask_local() const override;
 
-  void open_lib_udf();
-  void close_lib_udf();
-
   std::string setup_file_;
   std::string thread_model_;
   std::string device_number_;
@@ -60,11 +54,7 @@ private:
   std::vector<double> mass_matrix_;
 
   nrs_t* nrs_ptr_;
-
-  void* lib_udf_handle_;
-  // TODO: Get cache dir from env.  See udfLoadFunction in nekrs/udf/udf.cpp
-  const std::string lib_udf_name_ = ".cache/udf/libUDF.so";
-  std::vector<double>* localq_;
+  double* localq_;
 };
 
 }

@@ -5,11 +5,6 @@
 #include <math.h>
 #include <vector>
 
-// We use std::vector (not dfloat*)
-// * Must get resized in UDF_Setup (see below)
-// * Will get automatically destroyed
-std::vector<dfloat> localq;
-
 static occa::kernel cFillKernel;
 static occa::kernel cCopyKernel;
 static int updateProperties = 1;
@@ -17,8 +12,10 @@ static int updateProperties = 1;
 void userq(nrs_t* nrs, dfloat time, occa::memory o_S, occa::memory o_FS)
 {
   auto mesh = nrs->cds->mesh;
-  o_FS.copyFrom(localq.data(), mesh->Nelements * mesh->Np * sizeof(dfloat), 0);
-
+  // TODO: Check to see if we can copy from o_S instead
+  o_FS.copyFrom(&nrs->cds->S[nrs->cds->fieldOffset * sizeof(dfloat)],
+                mesh->Nelements * mesh->Np * sizeof(dfloat),
+                0);
 }
 
 void uservp(nrs_t* nrs,
@@ -80,9 +77,6 @@ void UDF_Setup(nrs_t* nrs)
 
   udf.sEqnSource = &userq;
   udf.properties = &uservp;
-
-  // ATTENTION: Need to explicitly resize localq
-  localq.resize(nrs->cds->mesh->Nelements * nrs->cds->mesh->Np);
 }
 
 void UDF_ExecuteStep(nrs_t* nrs, dfloat time, int tstep)
