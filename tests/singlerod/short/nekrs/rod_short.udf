@@ -3,7 +3,6 @@
 //
 #include "udf.hpp"
 #include <math.h>
-#include <vector>
 
 static occa::kernel cFillKernel;
 static occa::kernel cCopyKernel;

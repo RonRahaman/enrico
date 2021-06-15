@@ -7,18 +7,14 @@
 static occa::kernel cFillKernel;
 static occa::kernel cCopyKernel;
 static int updateProperties = 1;
-std::vector<dfloat> localq;
 
 void userq(nrs_t* nrs, dfloat time, occa::memory o_S, occa::memory o_FS)
 {
-  // auto mesh = nrs->cds->mesh;
-  // o_FS.copyFrom(localq.data(), mesh->Nelements * mesh->Np * sizeof(dfloat), 0);
-
-  cds_t *cds   = nrs->cds;
-  mesh_t *mesh = cds->mesh;
-
-  double *qarray = (double *) nek_scPtr(1);
-  o_FS.copyFrom(qarray, mesh->Nelements * mesh->Np * sizeof(dfloat), 0);
+  auto mesh = nrs->cds->mesh;
+  // TODO: Check to see if we can copy from o_S instead
+  o_FS.copyFrom(&nrs->cds->S[nrs->cds->fieldOffset * sizeof(dfloat)],
+                mesh->Nelements * mesh->Np * sizeof(dfloat),
+                0);
 }
 
 void uservp(nrs_t* nrs,
@@ -72,9 +68,6 @@ void UDF_Setup(nrs_t* nrs)
 
   udf.sEqnSource = &userq;
   udf.properties = &uservp;
-
-  // ATTENTION: Need to explicitly resize localq
-  localq.resize(nrs->cds->mesh->Nelements * nrs->cds->mesh->Np);
 }
 
 void UDF_ExecuteStep(nrs_t* nrs, dfloat time, int tstep)

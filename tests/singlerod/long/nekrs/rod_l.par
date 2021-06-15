@@ -23,3 +23,8 @@ residualTol = 1e-06
 [TEMPERATURE]
 boundaryTypeMap = t, I, I, I, I
 residualTol = 1e-04
+
+[SCALAR01]
+solver = none
+boundaryTypeMap = none
+writeToFile = true
