@@ -7,40 +7,65 @@ import subprocess
 import datetime
 from configparser import ConfigParser
 from xml.etree import ElementTree
+from enums import Enum
+
+Driv = Enum('Driv', dict(HEAT='heat_fluids', NEUT='neutronics'})
+
+class JsParams:
+    
+    def __init__(self, nodes, gpu_per_node=6, cpu_per_node=42, rs_per_node=6):
+
+        self.nodes = nodes
+        self.gpu_per_node = gpu_per_node
+        self.cpu_per_node = cpu_per_node
+        self.rs_per_node = rs_per_node
+
+    @property
+    def gpu_per_task(self):
+        return 1
+
+    @property
+    def rs(self):
+        return self.nodes * self.rs_per_node
+
+    @property
+    def gpu_per_rs(self):
+        return self.gpu_per_node // self.rs_per_node
+
+    @property
+    def cpu_per_rs(self):
+        return self.cpu_per_node // self.rs_per_node
+
+    @property
+    def tasks_per_rs(self):
+        return self.gpu_per_rs // self.gpu_per_task
+
+    def __str__(self):
+        rs = self.nodes * self.rs_per_node
+
+        tasks_per_rs = gpu_per_rs // gpu_per_task
+        cpu_per_rs = cpu_per_node // rs_per_node
+        return f"-smpiargs='gpu' -X 1 -n{rs} -r{self.rs_per_node} -a{self.tasks_per_rs} -c{self.cpu_per_rs} -g{self.gpu_per_rs} " \
+               f"-b rs -d packed"
 
 class BsubSummitDriver:
 
-    def __init__(self, n_nodes, time, proj_id=None, backend="CUDA"):
+    def __init__(self, nodes, time, proj_id=None, ignore_warnings=False):
         self.casename = None
-        self.n_nodes = int(n_nodes)
         self.time = time
         self.proj_id = proj_id
-        self.backend = backend.upper()
-
+        self.ignore_warnings = ignore_warnings
         self.occa_cache_dir = os.getcwd() + "/.cache/occa"
-
-        # Specific to Summit
         self.nvme_home = "/mnt/bb/" + os.environ["USER"]
         self.xl_home = "/sw/summit/xl/16.1.1-3/xlC/16.1.1"
-        self.gpus_per_node = 6
-        self.cores_per_socket = 21
-
-        if not self.proj_id:
-            self.proj_id = os.environ["PROJ_ID"]
-
-        if self.backend == "CUDA":
-            self.n_tasks = self.n_nodes * self.gpus_per_node
-            self.device_number = "0"
-        elif self.backend == "SERIAL":
-            self.n_tasks = self.n_nodes * self.cores_per_socket * 2
-            self.device_number = "LOCAL-RANK"
-        else:
-            raise ValueError("Incorrect value for NekRS backend.  Allowed values are: CUDA, SERIAL")
+        self.jsparams = JsParams(nodes=nodes)
 
         self.setup_env()
-        self.setup_files()
+        self.setup_params()
 
     def setup_env(self):
+        os.makedirs(self.occa_cache_dir, exist_ok=True)
+
         self.nekrs_home = os.environ.get('NEKRS_HOME')
         if not self.nekrs_home:
             raise RuntimeError("NEKRS_HOME was not defined in environment")
@@ -54,39 +79,58 @@ class BsubSummitDriver:
                 "OCCA_LDFLAGS" : f"{self.xl_home}/lib/libibmc++.a" }
         os.environ.update(nekrs_env)
 
-    def setup_files(self):
-        # Get info from enrico.xml
+    def setup_params(self):
+
+        warns = []
+
+        # ===================
+        # enrico.xml options
+        # ===================
+
         enrico_xml = ElementTree.parse("enrico.xml")
         root = enrico_xml.getroot()
-        if root.find('heat_fluids').find('driver').text != 'nekrs':
-            raise ValueError("enrico.xml was not configured to use nekrs as the heat_fluids driver")
-        self.casename = root.find('heat_fluids').find('casename').text
 
-        files = [f"{self.casename}.{ext}" for ext in ["par", "co2", "udf", "oudf", "re2"]]
-        for f in files:
-            if not os.path.isfile(f):
-                raise FileNotFoundError(f"Could not find {f}, needed for NekRS")
+        # nekRS options
+        # -------------
+        self.casename = root.find(Driv.HEAT).find('casename').text
 
-        os.makedirs(self.occa_cache_dir, exist_ok=True)
+        procs_per_node = root.find(Driv.HEAT).find('procs_per_node').text
+        if procs_per_node and int(procs_per_node) != self.jsparams.tasks_per_node:
+            warns.append(f'You should set <{Driv.HEAT}><procs_per_node> to ')
 
-        # Write correct info in parfile.  par.optionxform = str is for case-sensitivity
+        # OpenMC options
+        # --------------
+
+        procs_per_node = root.find(Driv.NEUT).find('procs_per_node').text
+        if procs_per_node and int(procs_per_node) != self.jsparams.tasks_per_node:
+            warns.append(f'You should set <{Driv.HEAT}><procs_per_node> to 6')
+
+
+
+
+
+        # =====================
+        # nekRS parfile options
+        # =====================
+        
         par = ConfigParser(inline_comment_prefixes=('#',';'))
         par.optionxform = str
         parfile = self.casename + ".par"
         par.read(parfile)
-        rewrite = False
-        if par.get('OCCA', 'backend', fallback='') != self.backend:
-            par.set('OCCA', 'backend', self.backend)
-            rewrite = True
-        if par.get('OCCA', 'deviceNumber', fallback='') != self.device_number:
-            par.set('OCCA', 'deviceNumber', self.device_number)
-            rewrite = True
+
+        for name, val in [['backend', 'CUDA'], ['deviceNumber', '0']]:
+            if par.get('OCCA', name, fallback='') != val:
+                warns.append(f'You should set ["OCCA"]["{name}"] to "{val} in {parfile}')
+
+
+
         if rewrite:
             backup_file = "{}.{}.bk".format(parfile, datetime.datetime.now().isoformat().replace(':', '.'))
-            print(f"Rewriting {parfile} with necessary runtime params.  Original will be moved to {backup_file}")
+            print(f"Rewriting {parfile}.  Original will be moved to {backup_file}")
             shutil.copy2(parfile, backup_file)
             with open(parfile, "w") as f:
                 par.write(f)
+
 
     def precompile(self):
         cmd = f"mpirun -pami_noib -np 1 {self.nekrs_home}/bin/nekrs --setup {self.casename} --build-only {self.n_tasks} --backend {self.backend}"
