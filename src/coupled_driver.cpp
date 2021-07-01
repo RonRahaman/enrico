@@ -3,6 +3,7 @@
 #include "enrico/comm_split.h"
 #include "enrico/driver.h"
 #include "enrico/error.h"
+#include "enrico/settings.h"
 
 #ifdef USE_NEK5000
 #include "enrico/nek5000_driver.h"
@@ -37,86 +38,35 @@
 
 namespace enrico {
 
-CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
+CoupledDriver::CoupledDriver(MPI_Comm comm)
   : comm_(comm)
+  , power_(settings::coupling::power)
+  , max_timesteps_(settings::coupling::max_timesteps)
+  , max_picard_iter_(settings::coupling::max_picard_iter)
+  , epsilon_(settings::coupling::epsilon)
+  , alpha_(settings::coupling::alpha)
+  , alpha_T_(settings::coupling::alpha_T)
+  , alpha_rho_(settings::coupling::alpha_rho)
+  , norm_(settings::coupling::norm)
+  , density_ic_(settings::coupling::density_ic)
+  , temperature_ic_(settings::coupling::density_ic)
 {
-  auto neut_node = node.child("neutronics");
-  auto heat_node = node.child("heat_fluids");
-  auto coup_node = node.child("coupling");
-
-  // get required coupling parameters
-  power_ = coup_node.child("power").text().as_double();
-  max_timesteps_ = coup_node.child("max_timesteps").text().as_int();
-  max_picard_iter_ = coup_node.child("max_picard_iter").text().as_int();
-
-  // get optional coupling parameters, using defaults if not provided
-  if (coup_node.child("epsilon"))
-    epsilon_ = coup_node.child("epsilon").text().as_double();
-
-  // Determine relaxation parameters for heat source, temperature, and density
-  auto set_alpha = [](pugi::xml_node node, double& alpha) {
-    if (node) {
-      std::string s = node.child_value();
-      if (s == "robbins-monro") {
-        alpha = ROBBINS_MONRO;
-      } else {
-        alpha = node.text().as_double();
-        Expects(alpha > 0 && alpha <= 1.0);
-      }
-    }
-  };
-  set_alpha(coup_node.child("alpha"), alpha_);
-  set_alpha(coup_node.child("alpha_T"), alpha_T_);
-  set_alpha(coup_node.child("alpha_rho"), alpha_rho_);
-
-  // check for convergence norm
-  if (coup_node.child("convergence_norm")) {
-    std::string s = coup_node.child_value("convergence_norm");
-    if (s == "L1") {
-      norm_ = Norm::L1;
-    } else if (s == "L2") {
-      norm_ = Norm::L2;
-    } else if (s == "Linf") {
-      norm_ = Norm::LINF;
-    } else {
-      throw std::runtime_error{"Invalid value for <convergence_norm>"};
-    }
-  }
-
-  if (coup_node.child("temperature_ic")) {
-    std::string s = coup_node.child_value("temperature_ic");
-
-    if (s == "neutronics") {
-      temperature_ic_ = Initial::neutronics;
-    } else if (s == "heat_fluids") {
-      temperature_ic_ = Initial::heat;
-    } else {
-      throw std::runtime_error{"Invalid value for <temperature_ic>"};
-    }
-  }
-
-  if (coup_node.child("density_ic")) {
-    std::string s = coup_node.child_value("density_ic");
-
-    if (s == "neutronics") {
-      density_ic_ = Initial::neutronics;
-    } else if (s == "heat_fluids") {
-      density_ic_ = Initial::heat;
-    } else {
-      throw std::runtime_error{"Invalid value for <density_ic>"};
-    }
-  }
-
   Expects(power_ > 0);
   Expects(max_timesteps_ >= 0);
   Expects(max_picard_iter_ >= 0);
   Expects(epsilon_ > 0);
 
+  auto validate_alpha = [](double a) {
+    Expects(a == settings::coupling::ROBBINS_MONRO || (a > 0 && a <= 1.0));
+  };
+  validate_alpha(alpha_);
+  validate_alpha(alpha_T_);
+  validate_alpha(alpha_rho_);
+
   // Create communicators
-  std::array<int, 2> nodes{neut_node.child("nodes").text().as_int(),
-                           heat_node.child("nodes").text().as_int()};
-  std::array<int, 2> procs_per_node{neut_node.child("procs_per_node").text().as_int(),
-                                    heat_node.child("procs_per_node").text().as_int()};
+  std::array<int, 2> nodes{settings::neutronics::nodes, settings::heat_fluids::nodes};
+  std::array<int, 2> procs_per_node{settings::neutronics::procs_per_node,
+                                    settings::heat_fluids::procs_per_node};
   std::array<Comm, 2> driver_comms;
   Comm intranode_comm; // Not used in current comm scheme
   Comm coupling_comm;  // Not used in current comm scheme
@@ -128,40 +78,38 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   auto heat_comm = driver_comms[1];
 
   // Instantiate neutronics driver
-  std::string neut_driver = neut_node.child_value("driver");
-  if (neut_driver == "openmc") {
+  if (settings::neutronics::driver == settings::neutronics::Driver::openmc) {
     neutronics_driver_ = std::make_unique<OpenmcDriver>(neutronics_comm.comm);
-  } else if (neut_driver == "shift") {
+  } else if (settings::neutronics::driver == settings::neutronics::Driver::shift) {
 #ifdef USE_SHIFT
     neutronics_driver_ = std::make_unique<ShiftDriver>(comm, neut_node);
 #else
-    throw std::runtime_error{"ENRICO has not been built with Shift support enabled."};
+    throw std::runtime_error{
+      "Shift was specified as a solver, but it is not enabled in this build of ENRICO"};
 #endif
   } else {
-    throw std::runtime_error{"Invalid value for <neutronics><driver>"};
+    throw std::runtime_error{"Unhandled enum for settings::neutronics::driver"};
   }
 
   // Instantiate heat-fluids driver
-  std::string s = heat_node.child_value("driver");
-  if (s == "nek5000") {
+  if (settings::heat_fluids::driver == settings::heat_fluids::Driver::nek5000) {
 #ifdef USE_NEK5000
-    heat_fluids_driver_ = std::make_unique<Nek5000Driver>(heat_comm.comm, heat_node);
+    heat_fluids_driver_ = std::make_unique<Nek5000Driver>(heat_comm.comm);
 #else
     throw std::runtime_error{
       "nek5000 was specified as a solver, but is not enabled in this build of ENRICO"};
 #endif
-  } else if (s == "nekrs") {
+  } else if (settings::heat_fluids::driver == settings::heat_fluids::Driver::nekrs) {
 #ifdef USE_NEKRS
-    heat_fluids_driver_ = std::make_unique<NekRSDriver>(heat_comm.comm, heat_node);
+    heat_fluids_driver_ = std::make_unique<NekRSDriver>(heat_comm.comm);
 #else
     throw std::runtime_error{
       "nekrs was specified as a solver, but is not enabled in this build of ENRICO"};
 #endif
-  } else if (s == "surrogate") {
-    heat_fluids_driver_ =
-      std::make_unique<SurrogateHeatDriver>(heat_comm.comm, heat_node);
+  } else if (settings::heat_fluids::driver == settings::heat_fluids::Driver::surrogate) {
+    heat_fluids_driver_ = std::make_unique<SurrogateHeatDriver>(heat_comm.comm);
   } else {
-    throw std::runtime_error{"Invalid value for <heat_fluids><driver>"};
+    throw std::runtime_error{"Unhandled enum for settings::heat_fluids::driver"};
   }
 
   // Discover the rank IDs (relative to comm_) that are in each single-physics subcomm

@@ -1,4 +1,5 @@
 #include "enrico/heat_fluids_driver.h"
+#include "enrico/settings.h"
 
 #include <gsl/gsl>
 #include <pugixml.hpp>
@@ -6,10 +7,10 @@
 
 namespace enrico {
 
-HeatFluidsDriver::HeatFluidsDriver(MPI_Comm comm, pugi::xml_node node)
+HeatFluidsDriver::HeatFluidsDriver(MPI_Comm comm)
   : Driver(comm)
+  , pressure_bc_(settings::heat_fluids::pressure_bc)
 {
-  pressure_bc_ = node.child("pressure_bc").text().as_double();
   Expects(pressure_bc_ > 0.0);
 }
 

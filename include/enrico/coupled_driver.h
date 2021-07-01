@@ -7,6 +7,7 @@
 #include "enrico/driver.h"
 #include "enrico/heat_fluids_driver.h"
 #include "enrico/neutronics_driver.h"
+#include "enrico/settings.h"
 
 #include <pugixml.hpp>
 #include <xtensor/xtensor.hpp>
@@ -21,20 +22,12 @@ namespace enrico {
 //! and thermal-hydraulics physics.
 class CoupledDriver {
 public:
-  // Types, aliases
-  enum class Norm { L1, L2, LINF }; //! Types of norms
-
-  //! Enumeration of available temperature initial condition specifications.
-  //! 'neutronics' sets temperature condition from the neutronics input files,
-  //! while 'heat' sets temperature based on a thermal-fluids input (or restart) file.
-  enum class Initial { neutronics, heat };
-
   //! Initializes coupled neutron transport and thermal-hydraulics solver with
   //! the given MPI communicator
   //!
   //! \param comm The MPI communicator used for the coupled driver
   //! \param node XML node containing settings
-  CoupledDriver(MPI_Comm comm, pugi::xml_node node);
+  explicit CoupledDriver(MPI_Comm comm);
 
   ~CoupledDriver() {}
 
@@ -62,7 +55,7 @@ public:
   //! Compute the norm of the temperature between two successive Picard iterations
   //! \param norm enumeration of norm to compute
   //! \return norm of the temperature between two iterations
-  double temperature_norm(Norm n);
+  double temperature_norm(settings::coupling::Norm n);
 
   //! Get reference to neutronics driver
   //! \return reference to driver
@@ -86,36 +79,23 @@ public:
     return get_timestep_index() == 0 and get_picard_index() == 0;
   }
 
-  Comm comm_; //!< The MPI communicator used to run the driver
+  Comm comm_;                 //!< The MPI communicator used to run the driver
+  const double power_;        //!< Power in [W]
+  const int max_timesteps_;   //!< Maximum number of time steps
+  const int max_picard_iter_; //!< Maximum number of Picard iterations
+  const double epsilon_;      //!< Picard iteration convergence tolerance
+  const double alpha_;        //!< Constant relaxation factor for the heat source
+  const double alpha_T_;      //!< Constant relaxation factor for the temperature
+  const double alpha_rho_;    //!< Constant relaxation factor for the density
 
-  double power_; //!< Power in [W]
+  //! Where to obtain the temperature initial condition from
+  const settings::coupling::Initial temperature_ic_;
 
-  int max_timesteps_; //!< Maximum number of time steps
+  //! Where to obtain the density initial condition from
+  const settings::coupling::Initial density_ic_;
 
-  int max_picard_iter_; //!< Maximum number of Picard iterations
-
-  //! Picard iteration convergence tolerance, defaults to 1e-3 if not set
-  double epsilon_{1e-3};
-
-  //! Constant relaxation factor for the heat source,
-  //! defaults to 1.0 (standard Picard) if not set
-  double alpha_{1.0};
-
-  //! Constant relaxation factor for the temperature, defaults to the
-  //! relaxation aplied to the heat source if not set
-  double alpha_T_{alpha_};
-
-  //! Constant relaxation factor for the density, defaults to the
-  //! relaxation applied to the heat source if not set
-  double alpha_rho_{alpha_};
-
-  //! Where to obtain the temperature initial condition from. Defaults to the
-  //! temperatures in the neutronics input file.
-  Initial temperature_ic_{Initial::neutronics};
-
-  //! Where to obtain the density initial condition from. Defaults to the densities
-  //! in the neutronics input file.
-  Initial density_ic_{Initial::neutronics};
+  // Norm to use for convergence checks
+  const settings::coupling::Norm norm_;
 
 private:
   //! Create bidirectional mappings from neutronics cell instances to/from TH elements
@@ -148,9 +128,6 @@ private:
 
   //! Print report of communicator layout
   void comm_report();
-
-  //! Special alpha value indicating use of Robbins-Monro relaxation
-  constexpr static double ROBBINS_MONRO = -1.0;
 
   int i_timestep_; //!< Index pertaining to current timestep
 
@@ -211,9 +188,6 @@ private:
 
   //! Volumes of local elements.  Set only on heat/fluids ranks.
   std::vector<double> elem_volumes_;
-
-  // Norm to use for convergence checks
-  Norm norm_{Norm::LINF};
 };
 
 } // namespace enrico

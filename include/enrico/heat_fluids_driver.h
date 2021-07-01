@@ -16,7 +16,7 @@ namespace enrico {
 //! Base class for driver that controls a heat-fluids solve
 class HeatFluidsDriver : public Driver {
 public:
-  HeatFluidsDriver(MPI_Comm comm, pugi::xml_node node);
+  explicit HeatFluidsDriver(MPI_Comm comm);
 
   virtual ~HeatFluidsDriver() = default;
 
@@ -62,7 +62,7 @@ public:
   //! \return Vector of all volumes
   std::vector<double> volumes() const;
 
-  double pressure_bc_; //! System pressure in [MPa]
+  const double pressure_bc_; //! System pressure in [MPa]
 
   //! The displacements of local elements, relative to rank 0. Used in an MPI
   //! Gatherv operation.

@@ -24,7 +24,7 @@ public:
   //! NekDriver.
   //!
   //! \param comm  The MPI communicator used to initialze Nek5000
-  Nek5000Driver(MPI_Comm comm, pugi::xml_node xml_root);
+  explicit Nek5000Driver(MPI_Comm comm);
 
   //! Finalizes Nek5000.
   //!
@@ -104,7 +104,7 @@ public:
   //! \return Number of global mesh elements
   std::size_t n_global_elem() const override { return active() ? nelgt_ : 0; }
 
-  std::string casename_; //!< Nek5000 casename (name of .rea file)
+  const std::string casename_; //!< Nek5000 casename (name of .rea file)
 
 private:
   //! Get temperature of local mesh elements
@@ -144,7 +144,7 @@ private:
   //! as the last unsolved scalar.
   int32_t npscal_;
 
-  bool output_heat_source_ = false; //!< If true, output heat source to field file
+  const bool output_heat_source_ = false; //!< If true, output heat source to field file
 };
 
 } // namespace enrico

@@ -9,7 +9,7 @@
 namespace enrico {
 class NekRSDriver : public HeatFluidsDriver {
 public:
-  NekRSDriver(MPI_Comm comm, pugi::xml_node node);
+  explicit NekRSDriver(MPI_Comm comm);
 
   ~NekRSDriver();
 
@@ -39,7 +39,7 @@ private:
   void open_lib_udf();
   void close_lib_udf();
 
-  std::string setup_file_;
+  const std::string casename_;
   std::string thread_model_;
   std::string device_number_;
   double time_;
@@ -60,7 +60,7 @@ private:
   std::vector<double> mass_matrix_;
 
   //! Output heat source to separate .fld file
-  bool output_heat_source_ = false;
+  const bool output_heat_source_;
 
   //! Handle to host when needed for occa::memory.
   occa::device host_;

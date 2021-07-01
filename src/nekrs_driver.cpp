@@ -1,5 +1,6 @@
 #include "enrico/nekrs_driver.h"
 #include "enrico/error.h"
+#include "enrico/settings.h"
 #include "gsl.hpp"
 #include "iapws/iapws.h"
 #include "io.hpp"
@@ -12,8 +13,10 @@
 #include <dlfcn.h>
 
 namespace enrico {
-NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
-  : HeatFluidsDriver(comm, node)
+NekRSDriver::NekRSDriver(MPI_Comm comm)
+  : HeatFluidsDriver(comm)
+  , casename_(settings::heat_fluids::casename)
+  , output_heat_source_(settings::heat_fluids::output_heat_source)
 {
   if (active()) {
     // Force NEKRS_HOME
@@ -23,22 +26,17 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
     err_chk(setenv("NEKRS_HOME", NEKRS_HOME, 1) == 0,
             "Could not set env variable NEKRS_HOME");
 
-    if (node.child("output_heat_source")) {
-      output_heat_source_ = node.child("output_heat_source").text().as_bool();
-    }
-
     host_.setup("mode: 'Serial'");
 
     // See vendor/nekRS/src/core/occaDeviceConfig.cpp for valid keys
-    setup_file_ = node.child_value("casename");
     nekrs::setup(comm /* comm_in */,
                  0 /* buildOnly */,
                  0 /* sizeTarget */,
                  0 /* ciMode */,
                  "" /* cacheDir */,
-                 setup_file_ /* _setupFile */,
+                 casename_ /* _setupFile */,
                  "" /* backend_ */,
-        "" /* _deviceId */);
+                 "" /* _deviceId */);
 
     nrs_ptr_ = reinterpret_cast<nrs_t *>(nekrs::nrsPtr());
 

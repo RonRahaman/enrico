@@ -1,4 +1,5 @@
 #include "enrico/nek5000_driver.h"
+#include "enrico/settings.h"
 
 #include "enrico/error.h"
 #include "gsl/gsl"
@@ -14,14 +15,12 @@
 
 namespace enrico {
 
-Nek5000Driver::Nek5000Driver(MPI_Comm comm, pugi::xml_node node)
-  : HeatFluidsDriver(comm, node)
+Nek5000Driver::Nek5000Driver(MPI_Comm comm)
+  : HeatFluidsDriver(comm)
+  , casename_(settings::heat_fluids::casename)
+  , output_heat_source_(settings::heat_fluids::output_heat_source)
 {
   if (active()) {
-    casename_ = node.child_value("casename");
-    if (node.child("output_heat_source")) {
-      output_heat_source_ = node.child("output_heat_source").text().as_bool();
-    }
 
     if (comm_.rank == 0) {
       init_session_name();

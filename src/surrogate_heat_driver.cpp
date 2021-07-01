@@ -21,8 +21,8 @@ namespace enrico {
 int ChannelFactory::index_ = 0;
 int RodFactory::index_ = 0;
 
-SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm, pugi::xml_node node)
-  : HeatFluidsDriver(comm, node)
+SurrogateHeatDriver::SurrogateHeatDriver(MPI_Comm comm)
+  : HeatFluidsDriver(comm)
 {
   // Determine thermal-hydraulic parameters for solid phase
   clad_inner_radius_ = node.child("clad_inner_radius").text().as_double();
