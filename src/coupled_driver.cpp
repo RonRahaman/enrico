@@ -206,6 +206,9 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
 
   init_fluid_mask();
 
+  output_volumes();
+  MPI_Abort(comm_.comm, 0);
+
   init_temperatures();
   init_densities();
   init_heat_source();
@@ -737,6 +740,62 @@ void CoupledDriver::check_volumes()
     comm_.message(msg.str(), neutronics_root_);
   }
   comm_.Barrier();
+}
+
+void CoupledDriver::output_volumes()
+{
+#ifdef USE_NEKRS
+  const auto& neutronics = this->get_neutronics_driver();
+  auto heat_fluids = dynamic_cast<NekRSDriver&>(this->get_heat_driver());
+
+  decltype(cells_) cells_recv;
+  std::vector<double> cell_vols, cell_vols_recv;
+
+  // Each heat rank sends its cells to the neutronics root.  Then neutronics root
+  // finds volumes of those cells.  Then neutronics root sends cell volumes back
+  // to the corresponding heat rank.
+  for (const auto& heat_rank : heat_ranks_) {
+    comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
+    if (comm_.rank == neutronics_root_) {
+      for (const auto& cell : cells_recv) {
+        cell_vols.push_back(neutronics.get_volume(cell));
+      }
+    }
+    comm_.send_and_recv(cell_vols_recv, heat_rank, cell_vols, neutronics_root_);
+    comm_.Barrier();
+  }
+
+  if (heat_fluids.active()) {
+    const auto n_el = heat_fluids.n_local_elem_;
+    const auto n_gll = heat_fluids.n_gll_;
+    std::vector<double> fld(heat_fluids.nrs_ptr_->fieldOffset, 0);
+    occa::memory o_fld =
+      occa::cpu::wrapMemory(heat_fluids.host_, fld.data(), fld.size() * sizeof(double));
+
+    // Cell volumes
+    for (gsl::index i = 0; i < cells_.size(); ++i) {
+      for (const auto& j : cell_to_elems_.at(cells_.at(i))) {
+        for (gsl::index k = 0; k < n_gll; ++k) {
+          if (!heat_fluids.in_fluid_at(j)) {
+            fld.at(j * n_gll + k) = cell_vols_recv.at(i);
+          }
+        }
+      }
+    }
+    writeFld("vcl", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Elem volumes
+    auto elem_vols = heat_fluids.volume_local();
+    for (gsl::index j = 0; j < n_el; ++j) {
+      for (gsl::index k = 0; k < n_gll; ++k) {
+        fld.at(j * n_gll + k) = elem_vols.at(j);
+      }
+    }
+    writeFld("vel", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+  }
+
+  comm_.Barrier();
+#endif
 }
 
 void CoupledDriver::init_densities()

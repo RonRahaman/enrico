@@ -168,6 +168,12 @@ private:
   //! Print report of communicator layout
   void comm_report();
 
+  //! Output volumes to fld file
+  //!
+  //! The heat/fluids volumes are in the "temperature" field and the neutroinics volumes
+  //! are in the passive scalar 0
+  void output_volumes();
+
   //! Special alpha value indicating use of Robbins-Monro relaxation
   constexpr static double ROBBINS_MONRO = -1.0;
 

@@ -29,9 +29,18 @@ public:
 
   int set_heat_source_at(int32_t local_elem, double heat) override;
 
+  //! Handle to host when needed for occa::memory.
+  occa::device host_;
+  nrs_t* nrs_ptr_;
+  int n_local_elem_;
+  std::size_t n_global_elem_;
+  int poly_deg_;
+  int n_gll_;
+
+  std::vector<double> volume_local() const override;
+
 private:
   std::vector<Position> centroid_local() const override;
-  std::vector<double> volume_local() const override;
   std::vector<double> temperature_local() const override;
   std::vector<double> density_local() const override;
   std::vector<int> fluid_mask_local() const override;
@@ -44,10 +53,6 @@ private:
   std::string device_number_;
   double time_;
   int tstep_;
-  int n_local_elem_;
-  std::size_t n_global_elem_;
-  int poly_deg_;
-  int n_gll_;
 
   // TODO: These assume the default values of dfloat, dlong, and hlong in
   //  nekrs/src/libP/include/types.h.  Might want to typedef them
@@ -61,11 +66,6 @@ private:
 
   //! Output heat source to separate .fld file
   bool output_heat_source_ = false;
-
-  //! Handle to host when needed for occa::memory.
-  occa::device host_;
-
-  nrs_t* nrs_ptr_;
 
   void* lib_udf_handle_;
   // TODO: Get cache dir from env.  See udfLoadFunction in nekrs/udf/udf.cpp
