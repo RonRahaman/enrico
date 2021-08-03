@@ -749,12 +749,13 @@ void CoupledDriver::output_volumes()
   auto heat_fluids = dynamic_cast<NekRSDriver&>(this->get_heat_driver());
 
   decltype(cells_) cells_recv;
-  std::vector<double> cell_vols, cell_vols_recv;
+  std::vector<double> cell_vols_recv;
 
   // Each heat rank sends its cells to the neutronics root.  Then neutronics root
   // finds volumes of those cells.  Then neutronics root sends cell volumes back
   // to the corresponding heat rank.
   for (const auto& heat_rank : heat_ranks_) {
+    std::vector<double> cell_vols;
     comm_.send_and_recv(cells_recv, neutronics_root_, cells_, heat_rank);
     if (comm_.rank == neutronics_root_) {
       for (const auto& cell : cells_recv) {
@@ -792,6 +793,28 @@ void CoupledDriver::output_volumes()
       }
     }
     writeFld("vel", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Mapping
+    for (gsl::index j = 0; j < n_el; ++j) {
+      for (gsl::index k = 0; k < n_gll; ++k) {
+        fld.at(j * n_gll + k) = elem_to_cell_.at(j);
+      }
+    }
+    writeFld("ecm", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    //// Simpler volume comparison
+    // decltype(elem_to_cell_) elem_to_cell_recv;
+    // std::vector<double> e_to_c_vols_recv;
+    // for (const auto& heat_rank : heat_ranks_) {
+    //   comm_.send_and_recv(elem_to_cell_recv, neutronics_root_, elem_to_cell_,
+    //   heat_rank); if (comm_.rank == neutronics_root_) {
+    //     for (const auto& cell : elem_to_cell_recv) {
+    //       e_to_c_vols.push_back(neutronics.get_volume(cell));
+    //     }
+    //   }
+    //   comm_.send_and_recv(cell_vols_recv, heat_rank, cell_vols, neutronics_root_);
+    //   comm_.Barrier();
+    // }
   }
 
   comm_.Barrier();
