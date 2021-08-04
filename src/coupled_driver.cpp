@@ -683,6 +683,23 @@ void CoupledDriver::check_volumes()
   const auto& n_el = heat_fluids.n_local_elem_;
   const auto& n_gll = heat_fluids.n_gll_;
 
+  // Cell IDs on gridpoint mesh
+  comm_.message("  Cell IDs on element mesh");
+  if (heat_fluids.active()) {
+    std::vector<double> ids(heat_fluids.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        ids.at(i * n_gll + j) = elem_to_cell_.at(i);
+      }
+    }
+#ifdef USE_NEKRS
+    occa::memory o_fld =
+      occa::cpu::wrapMemory(heat_fluids.host_, ids.data(), ids.size() * sizeof(double));
+    writeFld("cid", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+#endif
+  }
+  comm_.Barrier();
+
   // Element volumes defined on element mesh
   comm_.message("  Element volumes on element mesh");
   if (heat_fluids.active()) {
@@ -808,22 +825,22 @@ void CoupledDriver::check_volumes()
   comm_.Barrier();
 
   // Ratio of volumes from heat to volumes from neutron
-  comm_.message("  Ratio on gridpoint mesh");
-  std::vector<double> ratio(heat_fluids.nrs_ptr_->fieldOffset);
+  comm_.message("  Diff on gridpoint mesh");
+  std::vector<double> diff(heat_fluids.nrs_ptr_->fieldOffset);
   if (heat_fluids.active()) {
     for (gsl::index i = 0; i < n_el; ++i) {
-      double r = 1.0;
+      double d = 0.0;
       if (!heat_fluids.in_fluid_at(i)) {
-        r = cell_vols_from_heat_on_elems.at(i) / cell_vols_from_neutron_on_elems.at(i);
+        d = cell_vols_from_neutron_on_elems.at(i) - cell_vols_from_heat_on_elems.at(i);
       }
       for (gsl::index j = 0; j < n_gll; ++j) {
-        ratio.at(i * n_gll + j) = r;
+        diff.at(i * n_gll + j) = d;
       }
     }
 #ifdef USE_NEKRS
-    occa::memory o_fld = occa::cpu::wrapMemory(
-      heat_fluids.host_, ratio.data(), ratio.size() * sizeof(double));
-    writeFld("vrt", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+    occa::memory o_fld =
+      occa::cpu::wrapMemory(heat_fluids.host_, diff.data(), diff.size() * sizeof(double));
+    writeFld("vdf", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
 #endif
   }
   comm_.Barrier();
@@ -838,7 +855,7 @@ void CoupledDriver::check_volumes()
     for (gsl::index i = 0; i < n_el; ++i) {
       if (heat_fluids.in_fluid_at(i)) {
         ++loc_count;
-        const auto r = ratio.at(i);
+        const auto r = diff.at(i);
         loc_sum += r;
         loc_min = std::min(loc_min, r);
         loc_max = std::max(loc_max, r);
@@ -859,13 +876,11 @@ void CoupledDriver::check_volumes()
     MPI_Reduce(&loc_max, &glob_max, 1, MPI_DOUBLE, MPI_MAX, 0, heat_fluids.comm_.comm);
 
     std::stringstream msg;
-    msg << "  Min heat-fluids/neutron volume ratio:  " << std::setprecision(4)
-        << glob_min;
+    msg << "  Min heat-fluids/neutron volume diff:  " << std::setprecision(4) << glob_min;
     heat_fluids.comm_.message(msg.str());
 
     msg.str("");
-    msg << "  Max heat-fluids/neutron volume ratio:  " << std::setprecision(4)
-        << glob_max;
+    msg << "  Max heat-fluids/neutron volume diff:  " << std::setprecision(4) << glob_max;
     heat_fluids.comm_.message(msg.str());
 
     msg.str("");
