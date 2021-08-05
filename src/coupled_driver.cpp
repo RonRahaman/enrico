@@ -60,6 +60,7 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   max_timesteps_ = coup_node.child("max_timesteps").text().as_int();
   max_picard_iter_ = coup_node.child("max_picard_iter").text().as_int();
   verbose_ = coup_node.child("verbose").text().as_bool();
+  output_vol_maps_ = coup_node.child("output_volume_maps").text().as_bool();
 
   // get optional coupling parameters, using defaults if not provided
   if (coup_node.child("epsilon"))
@@ -674,54 +675,11 @@ void CoupledDriver::init_volumes()
 void CoupledDriver::check_volumes()
 {
   comm_.message("Volume check");
-  const auto& neutronics = this->get_neutronics_driver();
-#ifdef USE_NEKRS
-  auto heat_fluids = dynamic_cast<NekRSDriver&>(this->get_heat_driver());
-#else
-  auto heat_fluids = this->get_heat_driver();
-#endif
-  const auto& n_el = heat_fluids.n_local_elem_;
-  const auto& n_gll = heat_fluids.n_gll_;
-
-  // Cell IDs on gridpoint mesh
-  comm_.message("  Cell IDs on element mesh");
-  if (heat_fluids.active()) {
-    std::vector<double> ids(heat_fluids.nrs_ptr_->fieldOffset);
-    for (gsl::index i = 0; i < n_el; ++i) {
-      for (gsl::index j = 0; j < n_gll; ++j) {
-        ids.at(i * n_gll + j) = elem_to_cell_.at(i);
-      }
-    }
-#ifdef USE_NEKRS
-    occa::memory o_fld =
-      occa::cpu::wrapMemory(heat_fluids.host_, ids.data(), ids.size() * sizeof(double));
-    writeFld("cid", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
-#endif
-  }
-  comm_.Barrier();
-
-  // Element volumes defined on element mesh
-  comm_.message("  Element volumes on element mesh");
-  if (heat_fluids.active()) {
-    const auto& elem_vols = heat_fluids.volume_local();
-    std::vector<double> gpoint_vols(heat_fluids.nrs_ptr_->fieldOffset);
-    for (gsl::index i = 0; i < n_el; ++i) {
-      double v = elem_vols.at(i);
-      for (gsl::index j = 0; j < n_gll; ++j) {
-        gpoint_vols.at(i * n_gll + j) = v;
-      }
-    }
-#ifdef USE_NEKRS
-    occa::memory o_fld = occa::cpu::wrapMemory(
-      heat_fluids.host_, gpoint_vols.data(), gpoint_vols.size() * sizeof(double));
-    writeFld("vel", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
-#endif
-  }
-  comm_.Barrier();
+  const auto& neut = this->get_neutronics_driver();
+  const auto& heat = this->get_heat_driver();
 
   // Global cell volumes defined on element mesh,
   // where volumes are retrieved directly from neutron solver's geometry
-  comm_.message("  Cell volumes from neutronics on element mesh");
   std::vector<double> cell_vols_from_neutron_on_elems;
   for (const auto& heat_rank : heat_ranks_) {
     decltype(elem_to_cell_) e_to_c_recv;
@@ -730,7 +688,7 @@ void CoupledDriver::check_volumes()
     decltype(cell_vols_from_neutron_on_elems) cv_send;
     if (comm_.rank == neutronics_root_) {
       for (const auto& c : e_to_c_recv) {
-        cv_send.push_back(neutronics.get_volume(c));
+        cv_send.push_back(neut.get_volume(c));
       }
     }
     comm_.send_and_recv(
@@ -738,30 +696,8 @@ void CoupledDriver::check_volumes()
     comm_.Barrier();
   }
 
-  // Global cell volumes defined on gridpoints,
-  // where volumes were retrieved directly from neutron solver's geometry
-  comm_.message("  Cell volumes from neutronics on gridpoint mesh");
-  if (heat_fluids.active()) {
-    std::vector<double> cell_vols_from_neutron_on_gpoints(
-      heat_fluids.nrs_ptr_->fieldOffset);
-    for (gsl::index i = 0; i < n_el; ++i) {
-      double v = heat_fluids.in_fluid_at(i) ? 0.0 : cell_vols_from_neutron_on_elems.at(i);
-      for (gsl::index j = 0; j < n_gll; ++j) {
-        cell_vols_from_neutron_on_gpoints.at(i * n_gll + j) = v;
-      }
-    }
-#ifdef USE_NEKRS
-    occa::memory o_fld =
-      occa::cpu::wrapMemory(heat_fluids.host_,
-                            cell_vols_from_neutron_on_gpoints.data(),
-                            cell_vols_from_neutron_on_gpoints.size() * sizeof(double));
-    writeFld("vcn", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
-#endif
-  }
-
   // Global cell volumes defined on neutronic cells
   // where volumes were accumulated from heat/fluid solver's local cells
-  comm_.message("  Cell volumes from heat/fluids on neutronics cells");
   std::map<CellHandle, double> cell_vols_from_heat_on_cells;
   for (const auto& heat_rank : heat_ranks_) {
     decltype(cells_) cells_recv;
@@ -786,7 +722,6 @@ void CoupledDriver::check_volumes()
 
   // Global cell volumes defined on element mesh
   // where volumes were accumulated from heat/fluids solvers
-  comm_.message("  Cell volumes from heat/fluids on element mesh");
   std::vector<double> cell_vols_from_heat_on_elems;
   for (const auto& heat_rank : heat_ranks_) {
     decltype(elem_to_cell_) e_to_c_recv;
@@ -803,57 +738,15 @@ void CoupledDriver::check_volumes()
     comm_.Barrier();
   }
 
-  // Global cell volumes defined on gridpoints
-  // where volumes were accumulated from heat/fluids solvers
-  comm_.message("  Cell volumes from heat/fluids on gridpoint mesh");
-  if (heat_fluids.active()) {
-    std::vector<double> cell_vols_from_heat_on_gpoints(heat_fluids.nrs_ptr_->fieldOffset);
-    for (gsl::index i = 0; i < n_el; ++i) {
-      double v = heat_fluids.in_fluid_at(i) ? 0.0 : cell_vols_from_heat_on_elems.at(i);
-      for (gsl::index j = 0; j < n_gll; ++j) {
-        cell_vols_from_heat_on_gpoints.at(i * n_gll + j) = v;
-      }
-    }
-#ifdef USE_NEKRS
-    occa::memory o_fld =
-      occa::cpu::wrapMemory(heat_fluids.host_,
-                            cell_vols_from_heat_on_gpoints.data(),
-                            cell_vols_from_heat_on_gpoints.size() * sizeof(double));
-    writeFld("vch", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
-#endif
-  }
-  comm_.Barrier();
-
-  // Ratio of volumes from heat to volumes from neutron
-  comm_.message("  Diff on gridpoint mesh");
-  std::vector<double> diff(heat_fluids.nrs_ptr_->fieldOffset);
-  if (heat_fluids.active()) {
-    for (gsl::index i = 0; i < n_el; ++i) {
-      double d = 0.0;
-      if (!heat_fluids.in_fluid_at(i)) {
-        d = cell_vols_from_neutron_on_elems.at(i) - cell_vols_from_heat_on_elems.at(i);
-      }
-      for (gsl::index j = 0; j < n_gll; ++j) {
-        diff.at(i * n_gll + j) = d;
-      }
-    }
-#ifdef USE_NEKRS
-    occa::memory o_fld =
-      occa::cpu::wrapMemory(heat_fluids.host_, diff.data(), diff.size() * sizeof(double));
-    writeFld("vdf", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
-#endif
-  }
-  comm_.Barrier();
-
   // Report min, max, and mean relative differences
-  if (heat_fluids.active()) {
+  if (heat.active()) {
     unsigned long loc_count = 0;
     double loc_sum = 0.0;
     double loc_min = std::numeric_limits<double>::max();
     double loc_max = std::numeric_limits<double>::min();
 
-    for (gsl::index i = 0; i < n_el; ++i) {
-      if (!heat_fluids.in_fluid_at(i)) {
+    for (gsl::index i = 0; i < heat.n_local_elem(); ++i) {
+      if (!heat.in_fluid_at(i)) {
         ++loc_count;
         const auto rel_diff = std::abs(cell_vols_from_neutron_on_elems.at(i) -
                                        cell_vols_from_heat_on_elems.at(i)) /
@@ -866,19 +759,19 @@ void CoupledDriver::check_volumes()
 
     unsigned long glob_count;
     MPI_Reduce(
-      &loc_count, &glob_count, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, heat_fluids.comm_.comm);
+      &loc_count, &glob_count, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, heat.comm_.comm);
 
     double glob_sum;
-    MPI_Reduce(&loc_sum, &glob_sum, 1, MPI_DOUBLE, MPI_SUM, 0, heat_fluids.comm_.comm);
+    MPI_Reduce(&loc_sum, &glob_sum, 1, MPI_DOUBLE, MPI_SUM, 0, heat.comm_.comm);
 
     double glob_min;
-    MPI_Reduce(&loc_min, &glob_min, 1, MPI_DOUBLE, MPI_MIN, 0, heat_fluids.comm_.comm);
+    MPI_Reduce(&loc_min, &glob_min, 1, MPI_DOUBLE, MPI_MIN, 0, heat.comm_.comm);
 
     double glob_max;
-    MPI_Reduce(&loc_max, &glob_max, 1, MPI_DOUBLE, MPI_MAX, 0, heat_fluids.comm_.comm);
+    MPI_Reduce(&loc_max, &glob_max, 1, MPI_DOUBLE, MPI_MAX, 0, heat.comm_.comm);
 
-    heat_fluids.comm_.message("Relative volume difference between neutronics cells and "
-                              "mapped heat/fluid elements");
+    heat.comm_.message("Relative volume difference between neut cells and "
+                       "mapped heat/fluid elements");
 
     std::ios_base::fmtflags old_flags(std::cout.flags());
     std::stringstream msg;
@@ -886,21 +779,97 @@ void CoupledDriver::check_volumes()
     msg.str("");
     msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
         << glob_min * 100 << " %";
-    heat_fluids.comm_.message(msg.str());
+    heat.comm_.message(msg.str());
 
     msg.str("");
     msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
         << glob_max * 100 << " %";
-    heat_fluids.comm_.message(msg.str());
+    heat.comm_.message(msg.str());
 
     msg.str("");
     msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
         << glob_sum / glob_count * 100 << " %";
-    heat_fluids.comm_.message(msg.str());
+    heat.comm_.message(msg.str());
     std::cout.flags(old_flags);
   }
-
   comm_.Barrier();
+
+#ifdef USE_NEKRS
+  auto nrs_drv = dynamic_cast<const NekRSDriver&>(heat);
+  const auto& n_el = nrs_drv.n_local_elem_;
+  const auto& n_gll = nrs_drv.n_gll_;
+  if (output_vol_maps_ && nrs_drv.active()) {
+
+    // Cell IDs on gridpoint mesh
+    std::vector<double> ids(nrs_drv.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        ids.at(i * n_gll + j) = elem_to_cell_.at(i);
+      }
+    }
+    occa::memory o_fld =
+      occa::cpu::wrapMemory(nrs_drv.host_, ids.data(), ids.size() * sizeof(double));
+    writeFld("cid", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Element volumes defined on gridpoint mesh
+    const auto& elem_vols = nrs_drv.volume_local();
+    std::vector<double> gpoint_vols(nrs_drv.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      double v = elem_vols.at(i);
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        gpoint_vols.at(i * n_gll + j) = v;
+      }
+    }
+    o_fld = occa::cpu::wrapMemory(
+      nrs_drv.host_, gpoint_vols.data(), gpoint_vols.size() * sizeof(double));
+    writeFld("vel", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Global cell volumes defined on gridpoints,
+    // where volumes were retrieved directly from neutron solver's geometry
+    std::vector<double> cell_vols_from_neutron_on_gpoints(nrs_drv.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      double v = nrs_drv.in_fluid_at(i) ? 0.0 : cell_vols_from_neutron_on_elems.at(i);
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        cell_vols_from_neutron_on_gpoints.at(i * n_gll + j) = v;
+      }
+    }
+    o_fld =
+      occa::cpu::wrapMemory(nrs_drv.host_,
+                            cell_vols_from_neutron_on_gpoints.data(),
+                            cell_vols_from_neutron_on_gpoints.size() * sizeof(double));
+    writeFld("vcn", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Global cell volumes defined on gridpoints
+    // where volumes were accumulated from heat/fluids solvers
+    std::vector<double> cell_vols_from_heat_on_gpoints(nrs_drv.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      double v = nrs_drv.in_fluid_at(i) ? 0.0 : cell_vols_from_heat_on_elems.at(i);
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        cell_vols_from_heat_on_gpoints.at(i * n_gll + j) = v;
+      }
+    }
+    o_fld = occa::cpu::wrapMemory(nrs_drv.host_,
+                                  cell_vols_from_heat_on_gpoints.data(),
+                                  cell_vols_from_heat_on_gpoints.size() * sizeof(double));
+    writeFld("vch", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+
+    // Diff between volumes from neut cells and mapped elements from heat/fluids
+    std::vector<double> diff(nrs_drv.nrs_ptr_->fieldOffset);
+    for (gsl::index i = 0; i < n_el; ++i) {
+      double d = 0.0;
+      if (!nrs_drv.in_fluid_at(i)) {
+        d = cell_vols_from_neutron_on_elems.at(i) - cell_vols_from_heat_on_elems.at(i);
+      }
+      for (gsl::index j = 0; j < n_gll; ++j) {
+        diff.at(i * n_gll + j) = d;
+      }
+    }
+    o_fld =
+      occa::cpu::wrapMemory(nrs_drv.host_, diff.data(), diff.size() * sizeof(double));
+    writeFld("vdf", 0, 1, 0, nullptr, nullptr, &o_fld, 1);
+  }
+  comm_.Barrier();
+#endif
 }
 
 void CoupledDriver::init_densities()

@@ -236,6 +236,9 @@ private:
 
   // Print verbose output
   bool verbose_ = false;
+
+  // Output volume mapping info to filed files
+  bool output_vol_maps_ = false;
 };
 
 } // namespace enrico

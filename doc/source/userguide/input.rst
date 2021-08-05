@@ -36,7 +36,6 @@ Under the ``<heat_fluids>`` element, these sub-elements are available Nek5000 an
   - For Nek5000 runs, the heat source is output as the first passive scalar in ``<casename>#.f######``.
   - For nekRS runs, the heat source is output as the temperature field in a second field file, ``qsc<casename>#.f#####``.
 
-
 Surrogate-specific Parameters
 -----------------------------
 
@@ -234,3 +233,17 @@ order to determine convergence. Valid values for this element are "L1", "L2",
 and "Linf".
 
 *Default*: Linf
+
+``<output_volume_maps>``
+------------------------
+
+Output Nek field files (``.fld``) with diagnostic visualizations of volume mapping.  Currently only supported for nekRS.
+The prefixes of the field files represent the following:
+
+* ``cid``: Shows the neutronic cell IDs mapped to each heat/fluids element
+* ``vel``: Element volumes
+* ``vcn``: Global cell volumes retrieved directly from the neutronics solver
+* ``vch``: Global cell volumes, where each cell's volume is calculated from the sum of heat/fluid elements
+   that are mapped to that cell.
+* ``vdf``: Difference between the global cell volumes from neutronics solver and global cell volumes calculated from
+   heat/fluid element mapping
