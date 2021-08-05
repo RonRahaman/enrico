@@ -845,20 +845,22 @@ void CoupledDriver::check_volumes()
   }
   comm_.Barrier();
 
-  // Report min, max, and mean ratios
-  comm_.message("  Aggregate stats");
+  // Report min, max, and mean relative differences
   if (heat_fluids.active()) {
     unsigned long loc_count = 0;
     double loc_sum = 0.0;
     double loc_min = std::numeric_limits<double>::max();
     double loc_max = std::numeric_limits<double>::min();
+
     for (gsl::index i = 0; i < n_el; ++i) {
-      if (heat_fluids.in_fluid_at(i)) {
+      if (!heat_fluids.in_fluid_at(i)) {
         ++loc_count;
-        const auto r = diff.at(i);
-        loc_sum += r;
-        loc_min = std::min(loc_min, r);
-        loc_max = std::max(loc_max, r);
+        const auto rel_diff = std::abs(cell_vols_from_neutron_on_elems.at(i) -
+                                       cell_vols_from_heat_on_elems.at(i)) /
+                              cell_vols_from_neutron_on_elems.at(i);
+        loc_sum += rel_diff;
+        loc_min = std::min(loc_min, rel_diff);
+        loc_max = std::max(loc_max, rel_diff);
       }
     }
 
@@ -875,18 +877,27 @@ void CoupledDriver::check_volumes()
     double glob_max;
     MPI_Reduce(&loc_max, &glob_max, 1, MPI_DOUBLE, MPI_MAX, 0, heat_fluids.comm_.comm);
 
+    heat_fluids.comm_.message("Relative volume difference between neutronics cells and "
+                              "mapped heat/fluid elements");
+
+    std::ios_base::fmtflags old_flags(std::cout.flags());
     std::stringstream msg;
-    msg << "  Min heat-fluids/neutron volume diff:  " << std::setprecision(4) << glob_min;
+
+    msg.str("");
+    msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
+        << glob_min * 100 << " %";
     heat_fluids.comm_.message(msg.str());
 
     msg.str("");
-    msg << "  Max heat-fluids/neutron volume diff:  " << std::setprecision(4) << glob_max;
+    msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
+        << glob_max * 100 << " %";
     heat_fluids.comm_.message(msg.str());
 
     msg.str("");
-    msg << "  Mean heat-fluids/neutron volume diff: " << std::setprecision(4)
-        << glob_sum / glob_count;
+    msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
+        << glob_sum / glob_count * 100 << " %";
     heat_fluids.comm_.message(msg.str());
+    std::cout.flags(old_flags);
   }
 
   comm_.Barrier();
