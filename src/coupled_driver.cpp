@@ -205,7 +205,6 @@ CoupledDriver::CoupledDriver(MPI_Comm comm, pugi::xml_node node)
   init_fluid_mask();
 
   check_volumes();
-  MPI_Abort(comm_.comm, 0);
 
   init_temperatures();
   init_densities();
@@ -796,8 +795,8 @@ void CoupledDriver::check_volumes()
 
 #ifdef USE_NEKRS
   auto nrs_drv = dynamic_cast<const NekRSDriver&>(heat);
-  const auto& n_el = nrs_drv.n_local_elem_;
-  const auto& n_gll = nrs_drv.n_gll_;
+  const auto& n_el = nrs_drv.n_local_elem();
+  const auto& n_gll = nrs_drv.n_gll();
   if (output_vol_maps_ && nrs_drv.active()) {
 
     // Cell IDs on gridpoint mesh
