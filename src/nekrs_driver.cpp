@@ -2,7 +2,9 @@
 #include "enrico/error.h"
 #include "iapws/iapws.h"
 #include "io.hpp"
+#include "nekInterfaceAdapter.hpp"
 #include "nekrs.hpp"
+#include "occa/core/device.hpp"
 
 #include <gsl-lite/gsl-lite.hpp>
 
@@ -29,7 +31,7 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
       output_heat_source_ = node.child("output_heat_source").text().as_bool();
     }
 
-    host_.setup("mode: 'Serial'");
+    host_.setup(std::string("mode: 'Serial'"));
 
     // See vendor/nekRS/src/core/occaDeviceConfig.cpp for valid keys
     setup_file_ = node.child_value("casename");
@@ -43,6 +45,7 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
                  "" /* _deviceId */);
 
     nrs_ptr_ = reinterpret_cast<nrs_t*>(nekrs::nrsPtr());
+    auto mesh = nrs_ptr_->cds->mesh[0];
 
     open_lib_udf();
 
@@ -52,29 +55,29 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
             "ENRICO must be run with a CHT simulation.");
 
     // Local and global element counts
-    n_local_elem_ = nrs_ptr_->cds->mesh->Nelements;
+    n_local_elem_ = mesh->Nelements;
     std::size_t n = n_local_elem_;
     MPI_Allreduce(
       &n, &n_global_elem_, 1, get_mpi_type<std::size_t>(), MPI_SUM, comm_.comm);
 
-    poly_deg_ = nrs_ptr_->cds->mesh->N;
+    poly_deg_ = mesh->N;
     n_gll_ = (poly_deg_ + 1) * (poly_deg_ + 1) * (poly_deg_ + 1);
 
-    x_ = nrs_ptr_->cds->mesh->x;
-    y_ = nrs_ptr_->cds->mesh->y;
-    z_ = nrs_ptr_->cds->mesh->z;
-    element_info_ = nrs_ptr_->cds->mesh->elementInfo;
+    x_ = mesh->x;
+    y_ = mesh->y;
+    z_ = mesh->z;
+    element_info_ = mesh->elementInfo;
 
     // rho energy is field 1 (0-based) of rho
-    rho_cp_ = &nrs_ptr_->cds->prop[nrs_ptr_->cds->fieldOffset];
+    rho_cp_ = &nrs_ptr_->cds->prop[nrs_ptr_->cds->fieldOffset[0]];
 
     temperature_ = nrs_ptr_->cds->S;
 
     // Construct lumped mass matrix from vgeo
     // See cdsSetup in vendor/nekRS/src/core/insSetup.cpp
     mass_matrix_.resize(n_local_elem_ * n_gll_);
-    auto vgeo = nrs_ptr_->cds->mesh->vgeo;
-    auto n_vgeo = nrs_ptr_->cds->mesh->Nvgeo;
+    auto vgeo = mesh->vgeo;
+    auto n_vgeo = mesh->Nvgeo;
     for (gsl::index e = 0; e < n_local_elem_; ++e) {
       for (gsl::index n = 0; n < n_gll_; ++n) {
         mass_matrix_[e * n_gll_ + n] = vgeo[e * n_gll_ * n_vgeo + JWID * n_gll_ + n];
@@ -104,11 +107,15 @@ void NekRSDriver::init_step()
 void NekRSDriver::solve_step()
 {
   timer_solve_step.start();
+  double elapsed_time = 0;
   const int runtime_stat_freq = 500;
-  auto elapsed_time = MPI_Wtime();
+  const int upd_check_freq = 20;
+
   tstep_ = 0;
   time_ = nekrs::startTime();
   auto last_step = nekrs::lastStep(time_, tstep_, elapsed_time);
+
+  nekrs::udfExecuteStep(time_, tstep_, /* outputStep */ 0);
 
   if (!last_step) {
     std::stringstream msg;
@@ -123,7 +130,7 @@ void NekRSDriver::solve_step()
   while (!last_step) {
     if (comm_.active())
       comm_.Barrier();
-    elapsed_time += (MPI_Wtime() - elapsed_time);
+    double time_start = MPI_Wtime();
     ++tstep_;
     last_step = nekrs::lastStep(time_, tstep_, elapsed_time);
 
@@ -131,19 +138,25 @@ void NekRSDriver::solve_step()
     if (last_step && nekrs::endTime() > 0)
       dt = nekrs::endTime() - time_;
     else
-      dt = nekrs::dt();
+      dt = nekrs::dt(tstep_);
 
     nekrs::runStep(time_, dt, tstep_);
     time_ += dt;
 
-    nekrs::udfExecuteStep(time_, tstep_, 0);
-
     if (tstep_ % runtime_stat_freq == 0 || last_step)
-      nekrs::printRuntimeStatistics();
+      nekrs::printRuntimeStatistics(tstep_);
+
+    if (comm_.active())
+      comm_.Barrier();
+
+    elapsed_time += (MPI_Wtime() - time_start);
+
+    if (tstep_ % upd_check_freq)
+      nekrs::processUpdFile();
   }
 
   // TODO:  Do we need this in v20.0 of nekRS?
-  nekrs::copyToNek(time_, tstep_);
+  nek::copyToNek(time_, tstep_);
   timer_solve_step.stop();
 }
 
@@ -154,7 +167,7 @@ void NekRSDriver::write_step(int timestep, int iteration)
   if (output_heat_source_) {
     comm_.message("Writing heat source to .fld file");
     occa::memory o_localq =
-      occa::cpu::wrapMemory(host_, localq_->data(), localq_->size() * sizeof(double));
+      host_.wrapMemory(localq_->data(), localq_->size() * sizeof(double));
     writeFld("qsc", time_, 1, 0, &nrs_ptr_->o_U, &nrs_ptr_->o_P, &o_localq, 1);
   }
   timer_write_step.stop();
@@ -232,7 +245,7 @@ std::vector<double> NekRSDriver::temperature_local() const
 
 std::vector<double> NekRSDriver::density_local() const
 {
-  nekrs::copyToNek(time_, tstep_);
+  nek::copyToNek(time_, tstep_);
   std::vector<double> local_densities(n_local_elem());
 
   for (int32_t i = 0; i < n_local_elem(); ++i) {
@@ -295,6 +308,7 @@ void NekRSDriver::close_lib_udf()
 NekRSDriver::~NekRSDriver()
 {
   close_lib_udf();
+  nekrs::finalize();
 }
 
 }
