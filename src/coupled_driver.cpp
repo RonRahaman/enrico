@@ -10,6 +10,7 @@
 
 #ifdef USE_NEKRS
 #include "enrico/nekrs_driver.h"
+#include "nekInterfaceAdapter.hpp"
 #endif
 
 #include "enrico/openmc_driver.h"
@@ -738,62 +739,79 @@ void CoupledDriver::check_volumes()
   }
 
   // Report min, max, and mean relative differences
+#ifdef USE_NEKRS
   if (heat.active()) {
-    unsigned long loc_count = 0;
-    double loc_sum = 0.0;
-    double loc_min = std::numeric_limits<double>::max();
-    double loc_max = std::numeric_limits<double>::min();
 
-    for (gsl::index i = 0; i < heat.n_local_elem(); ++i) {
-      if (!heat.in_fluid_at(i)) {
-        ++loc_count;
-        const auto rel_diff = std::abs(cell_vols_from_neutron_on_elems.at(i) -
-                                       cell_vols_from_heat_on_elems.at(i)) /
-                              cell_vols_from_neutron_on_elems.at(i);
-        loc_sum += rel_diff;
-        loc_min = std::min(loc_min, rel_diff);
-        loc_max = std::max(loc_max, rel_diff);
+    // Material IDs of fuel and cladding
+    const int MATFUEL = 1;
+    const int MATCLAD = 3;
+
+    // Item 0 is fuel, Item 1 is cladding
+    std::map<int, int> pair_idx{{MATFUEL, 0}, {MATCLAD, 1}};
+    unsigned long loc_counts[2] = {0, 0};
+    double loc_sums[2] = {0.0, 0.0};
+    double loc_mins[2] = {std::numeric_limits<double>::max(),
+                          std::numeric_limits<double>::max()};
+    double loc_maxs[2] = {std::numeric_limits<double>::max(),
+                          std::numeric_limits<double>::max()};
+    int* i_mate = reinterpret_cast<int*>(nek_ptr("_imaterial_"));
+
+    for (gsl::index e = 0; e < heat.n_local_elem(); ++e) {
+      if (i_mate[e] == MATFUEL || i_mate[e] == MATCLAD) {
+        auto j = pair_idx[i_mate[e]];
+        loc_counts[j] += 1;
+        const auto rel_diff = std::abs(cell_vols_from_neutron_on_elems.at(e) -
+                                       cell_vols_from_heat_on_elems.at(e)) /
+                              cell_vols_from_neutron_on_elems.at(e);
+        loc_sums[j] += rel_diff;
+        loc_mins[j] = std::min(loc_mins[j], rel_diff);
+        loc_maxs[j] = std::max(loc_maxs[j], rel_diff);
       }
     }
 
-    unsigned long glob_count;
+    unsigned long glob_counts[2];
     MPI_Reduce(
-      &loc_count, &glob_count, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, heat.comm_.comm);
+      loc_counts, glob_counts, 2, MPI_UNSIGNED_LONG, MPI_SUM, 0, heat.comm_.comm);
 
-    double glob_sum;
-    MPI_Reduce(&loc_sum, &glob_sum, 1, MPI_DOUBLE, MPI_SUM, 0, heat.comm_.comm);
+    double glob_sums[2];
+    MPI_Reduce(loc_sums, glob_sums, 2, MPI_DOUBLE, MPI_SUM, 0, heat.comm_.comm);
 
-    double glob_min;
-    MPI_Reduce(&loc_min, &glob_min, 1, MPI_DOUBLE, MPI_MIN, 0, heat.comm_.comm);
+    double glob_mins[2];
+    MPI_Reduce(loc_mins, glob_mins, 2, MPI_DOUBLE, MPI_MIN, 0, heat.comm_.comm);
 
-    double glob_max;
-    MPI_Reduce(&loc_max, &glob_max, 1, MPI_DOUBLE, MPI_MAX, 0, heat.comm_.comm);
+    double glob_maxs[2];
+    MPI_Reduce(loc_maxs, glob_maxs, 2, MPI_DOUBLE, MPI_MAX, 0, heat.comm_.comm);
 
     heat.comm_.message("Relative volume difference between neut cells and "
                        "mapped heat/fluid elements");
+    std::vector<std::string> labels{"Fuel", "Cladding"};
 
     std::ios_base::fmtflags old_flags(std::cout.flags());
     std::stringstream msg;
 
-    msg.str("");
-    msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
-        << glob_min * 100 << " %";
-    heat.comm_.message(msg.str());
+    for (int i = 0; i < 2; ++i) {
+      heat.comm_.message(labels[i]);
 
-    msg.str("");
-    msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
-        << glob_max * 100 << " %";
-    heat.comm_.message(msg.str());
+      msg.str("");
+      msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
+          << glob_mins[i] * 100 << " %";
+      heat.comm_.message(msg.str());
 
-    msg.str("");
-    msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
-        << glob_sum / glob_count * 100 << " %";
-    heat.comm_.message(msg.str());
+      msg.str("");
+      msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
+          << glob_maxs[i] * 100 << " %";
+      heat.comm_.message(msg.str());
+
+      msg.str("");
+      msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
+          << glob_sums[i] / glob_counts[i] * 100 << " %";
+      heat.comm_.message(msg.str());
+    }
+
     std::cout.flags(old_flags);
   }
   comm_.Barrier();
 
-#ifdef USE_NEKRS
   auto nrs_drv = dynamic_cast<const NekRSDriver&>(heat);
   const auto& n_el = nrs_drv.n_local_elem();
   const auto& n_gll = nrs_drv.n_gll();
@@ -869,6 +887,7 @@ void CoupledDriver::check_volumes()
   }
   comm_.Barrier();
 #endif
+  MPI_Abort(comm_.comm, 1);
 }
 
 void CoupledDriver::init_densities()

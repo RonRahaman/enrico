@@ -59,6 +59,9 @@ c-----------------------------------------------------------------------
       include 'SIZE'
       include 'TOTAL'
 
+      common/imaterial/i_mate(lelt)
+      integer i_mate
+
       common /scrach_o2/
      & con_array(lx1,ly1,lz1,lelv)
       COMMON /SCNRS/ SC_NRS(LX1*LY1*LZ1*LELT*7)
@@ -88,6 +91,28 @@ c-----------------------------------------------------------------------
       do i=1,n
         sc_nrs(i)=con_array(i,1,1,1)
       enddo  
+
+c     Set i_mate array.  For this case, only for volume check in ENRICO
+
+      do e=1,nelt
+         if (e.le.nelv) then
+             i_mate(e)=0
+         else
+            xx = xm1(1,1,1,e)
+            yy = ym1(1,1,1,e)
+            rr = sqrt(xx**2+yy**2)
+            if (rr.lt.0.406) then
+c              Fuel
+               i_mate(e) = 1
+            else if (rr.lt.0.414) then
+c              Gap
+               i_mate(e) = 2
+            else if (rr.lt.0.475) then
+c              Cladding
+               i_mate(e) = 3
+            endif
+         endif
+      enddo
 
       return
       end
