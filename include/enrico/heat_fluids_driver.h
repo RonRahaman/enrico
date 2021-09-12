@@ -93,6 +93,8 @@ public:
   //! \return Volumes of local mesh elements
   virtual std::vector<double> volume_local() const = 0;
 
+  int* i_material;
+
 protected:
   //! Initialize the counts and displacements of local elements for each MPI Rank.
   void init_displs();

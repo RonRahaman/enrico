@@ -43,7 +43,7 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
 
     nrs_ptr_ = reinterpret_cast<nrs_t*>(nekrs::nrsPtr());
 
-    open_lib_udf();
+    open_dl_libs();
 
     // Check that we're running a CHT simulation.
     err_chk(nrs_ptr_->cht == 1,
@@ -264,29 +264,45 @@ int NekRSDriver::set_heat_source_at(int32_t local_elem, double heat)
   return 0;
 }
 
-void NekRSDriver::open_lib_udf()
+void NekRSDriver::open_dl_libs()
 {
-  lib_udf_handle_ = dlopen(lib_udf_name_.c_str(), RTLD_LAZY);
+  // TODO: Get cache dir from env.  See udfLoadFunction in nekrs/udf/udf.cpp
+  const std::string lib_udf_name = ".cache/udf/libUDF.so";
+  const std::string lib_nek5k_name = ".cache/nek5000/lib" + setup_file_ + ".so";
+
+  lib_udf_handle_ = dlopen(lib_udf_name.c_str(), RTLD_LAZY);
   if (!lib_udf_handle_) {
     std::stringstream msg;
-    msg << "dlopen error for localq in " << lib_udf_name_ << " : " << dlerror();
+    msg << "dlopen error for localq in " << lib_udf_name << " : " << dlerror();
     throw std::runtime_error(msg.str());
   }
   void* localq_void = dlsym(lib_udf_handle_, "localq");
   if (dlerror()) {
-    throw std::runtime_error("dlsym error for localq in " + lib_udf_name_);
+    throw std::runtime_error("dlsym error for localq in " + lib_udf_name);
   }
   localq_ = reinterpret_cast<std::vector<double>*>(localq_void);
+
+  lib_nek5k_handle_ = dlopen(lib_nek5k_name.c_str(), RTLD_LAZY);
+  if (!lib_nek5k_handle_) {
+    std::stringstream msg;
+    msg << "dlopen error for imaterial in " << lib_nek5k_name << " : " << dlerror();
+    throw std::runtime_error(msg.str());
+  }
+  i_material = reinterpret_cast<int*>(dlsym(lib_nek5k_handle_, "imaterial_"));
+  if (dlerror()) {
+    throw std::runtime_error("dlsym error for imaterial in " + lib_nek5k_name);
+  }
 }
 
-void NekRSDriver::close_lib_udf()
+void NekRSDriver::close_dl_libs()
 {
-  err_chk(dlclose(lib_udf_handle_), "dlclose error for " + lib_udf_name_);
+  err_chk(dlclose(lib_udf_handle_), "dlclose error for UDF lib");
+  err_chk(dlclose(lib_nek5k_handle_), "dlclose error for nek5k lib");
 }
 
 NekRSDriver::~NekRSDriver()
 {
-  close_lib_udf();
+  close_dl_libs();
 }
 
 }

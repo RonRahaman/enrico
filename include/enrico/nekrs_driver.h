@@ -44,8 +44,8 @@ public:
   int n_gll() const { return n_gll_; }
 
 private:
-  void open_lib_udf();
-  void close_lib_udf();
+  void open_dl_libs();
+  void close_dl_libs();
 
   std::string setup_file_;
   std::string thread_model_;
@@ -71,8 +71,7 @@ private:
   bool output_heat_source_ = false;
 
   void* lib_udf_handle_;
-  // TODO: Get cache dir from env.  See udfLoadFunction in nekrs/udf/udf.cpp
-  const std::string lib_udf_name_ = ".cache/udf/libUDF.so";
+  void* lib_nek5k_handle_;
   std::vector<double>* localq_;
 };
 

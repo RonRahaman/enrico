@@ -752,13 +752,20 @@ void CoupledDriver::check_volumes()
     double loc_sums[2] = {0.0, 0.0};
     double loc_mins[2] = {std::numeric_limits<double>::max(),
                           std::numeric_limits<double>::max()};
-    double loc_maxs[2] = {std::numeric_limits<double>::max(),
-                          std::numeric_limits<double>::max()};
-    int* i_mate = reinterpret_cast<int*>(nek_ptr("_imaterial_"));
+    double loc_maxs[2] = {std::numeric_limits<double>::min(),
+                          std::numeric_limits<double>::min()};
+
+    int mat_min =
+      *std::min_element(heat.i_material, heat.i_material + heat.n_local_elem());
+    int mat_max =
+      *std::max_element(heat.i_material, heat.i_material + heat.n_local_elem());
+    if (heat.comm_.rank == 0) {
+      std::cout << "Min/max of i_material: " << mat_min << ", " << mat_max << std::endl;
+    }
 
     for (gsl::index e = 0; e < heat.n_local_elem(); ++e) {
-      if (i_mate[e] == MATFUEL || i_mate[e] == MATCLAD) {
-        auto j = pair_idx[i_mate[e]];
+      if (heat.i_material[e] == MATFUEL || heat.i_material[e] == MATCLAD) {
+        auto j = pair_idx[heat.i_material[e]];
         loc_counts[j] += 1;
         const auto rel_diff = std::abs(cell_vols_from_neutron_on_elems.at(e) -
                                        cell_vols_from_heat_on_elems.at(e)) /
@@ -782,32 +789,32 @@ void CoupledDriver::check_volumes()
     double glob_maxs[2];
     MPI_Reduce(loc_maxs, glob_maxs, 2, MPI_DOUBLE, MPI_MAX, 0, heat.comm_.comm);
 
-    heat.comm_.message("Relative volume difference between neut cells and "
+    heat.comm_.message("Volume differences between neut cells and "
                        "mapped heat/fluid elements");
     std::vector<std::string> labels{"Fuel", "Cladding"};
-
     std::ios_base::fmtflags old_flags(std::cout.flags());
     std::stringstream msg;
-
     for (int i = 0; i < 2; ++i) {
       heat.comm_.message(labels[i]);
+      if (glob_counts[i] <= 0) {
+        heat.comm_.message("  No elements found");
+      } else {
+        msg.str("");
+        msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
+            << glob_mins[i] * 100 << " %";
+        heat.comm_.message(msg.str());
 
-      msg.str("");
-      msg << "  Min: " << std::setw(10) << std::right << std::setprecision(4)
-          << glob_mins[i] * 100 << " %";
-      heat.comm_.message(msg.str());
+        msg.str("");
+        msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
+            << glob_maxs[i] * 100 << " %";
+        heat.comm_.message(msg.str());
 
-      msg.str("");
-      msg << "  Max: " << std::setw(10) << std::right << std::setprecision(4)
-          << glob_maxs[i] * 100 << " %";
-      heat.comm_.message(msg.str());
-
-      msg.str("");
-      msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
-          << glob_sums[i] / glob_counts[i] * 100 << " %";
-      heat.comm_.message(msg.str());
+        msg.str("");
+        msg << "  Mean:" << std::setw(10) << std::right << std::setprecision(4)
+            << glob_sums[i] / glob_counts[i] * 100 << " %";
+        heat.comm_.message(msg.str());
+      }
     }
-
     std::cout.flags(old_flags);
   }
   comm_.Barrier();
@@ -887,7 +894,6 @@ void CoupledDriver::check_volumes()
   }
   comm_.Barrier();
 #endif
-  MPI_Abort(comm_.comm, 1);
 }
 
 void CoupledDriver::init_densities()
