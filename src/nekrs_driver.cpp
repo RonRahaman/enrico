@@ -31,7 +31,7 @@ NekRSDriver::NekRSDriver(MPI_Comm comm, pugi::xml_node node)
       output_heat_source_ = node.child("output_heat_source").text().as_bool();
     }
 
-    host_.setup(std::string("mode: 'Serial'"));
+    host_.setup({{"mode", "serial"}});
 
     // See vendor/nekRS/src/core/occaDeviceConfig.cpp for valid keys
     setup_file_ = node.child_value("casename");
