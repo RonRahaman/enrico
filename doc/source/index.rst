@@ -22,6 +22,7 @@ Documentation
    :maxdepth: 2
 
    userguide/index
+   methodology/index
    devguide/index
    license
 
