@@ -834,6 +834,20 @@ void CoupledDriver::init_heat_source()
   comm_.message("Initializing heat source");
   timer_init_heat_source.start();
 
+  auto& heat = this->get_heat_driver();
+  auto& neut = this->get_neutronics_driver();
+
+  //! Statically assign senders and receivers for heat source update
+  for (int send = 0; send < neut.comm_.size; ++send) {
+    auto recvs = decomp_1d(heat.comm_.size, neut.comm_.size, send);
+    if (neut.active() && neut.comm_.rank == send) {
+      heat_source_receivers_ = recvs;
+    } else if (heat.active() && heat.comm_.rank >= recvs.first &&
+               heat.comm_.rank < recvs.second) {
+      heat_source_sender_ = send;
+    }
+  }
+
   if (this->heat_fluids_driver_->active()) {
     auto sz = {cell_to_glob_cell_.size()};
     cell_heat_source_ = xt::empty<double>(sz);

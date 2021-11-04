@@ -31,6 +31,23 @@ void get_driver_comms(Comm super_comm,
 
 //! Gathers the ranks (wrt super) that are also in sub
 std::vector<int> gather_subcomm_ranks(const Comm& super, const Comm& sub);
-}
+
+//! Computes a balanced decomposition of a 1D array.
+//!
+//! This is based on MPE_Decomp1D from MPICH, slightly modified for C++.
+//!
+//! In ENRICO, this is used to statically assign heat/fluids ranks to neutronics ranks
+//! for heat source coupling.  In this context, n := the number of heat/fluids ranks,
+//! size := the number of neutronics ranks, rank := the sending neutron rank, and
+//! return value := the range of receiving heat/fluid ranks
+//!
+//! \param[in] n Length of the array
+//! \param[in] size Number of processers in decomposition
+//! \param[in] rank Rank of this processor in the decomposition
+//! \return The starting and ending indices assigned to this rank.
+//!         Start is inclusive, end is non-inclusive.
+std::pair<int, int> decomp_1d(int n, int size, int rank);
+
+} // namespace enrico
 
 #endif // ENRICO_COMM_SPLIT_H

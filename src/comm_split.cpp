@@ -76,4 +76,21 @@ std::vector<int> gather_subcomm_ranks(const Comm& super, const Comm& sub)
   return ranks;
 }
 
+std::pair<int, int> decomp_1d(int n, int size, int rank)
+{
+  int n_local = n / size;
+  int s = rank * n_local + 1;
+  int deficit = n % size;
+  s += rank < deficit ? rank : deficit;
+  if (rank < deficit) {
+    ++n_local;
+  }
+  int e = s + n_local - 1;
+  if (e > n || rank == size - 1) {
+    e = n;
+  }
+  --s;
+  return std::pair<int, int>{s, e};
+}
+
 }

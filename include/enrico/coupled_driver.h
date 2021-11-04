@@ -230,6 +230,12 @@ private:
   //! Local element volumes.  Set only on heat/fluids ranks.
   std::vector<double> elem_volume_;
 
+  //! Receiving heat/fluids ranks for heat source update.  Valid on neutronics ranks.
+  std::pair<int, int> heat_source_receivers_{-1, -1};
+
+  //! Sending neutronics rank for heat source update.  Valid on heat/fluids ranks.
+  int heat_source_sender_ = -1;
+
   // Norm to use for convergence checks
   Norm norm_{Norm::LINF};
 
