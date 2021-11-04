@@ -197,9 +197,11 @@ void CoupledDriver::init_comms(const pugi::xml_node& node)
 
   timer_init_comms.start();
 
-  // Discover the rank IDs (relative to comm_) that are in each single-physics subcomm
-  neutronics_ranks_ = gather_subcomm_ranks(comm_, neutronics_comm);
-  heat_ranks_ = gather_subcomm_ranks(comm_, heat_comm);
+  // Discover mappings of rank IDs between the different comms
+  world_to_neutronics_ = map_comm_ranks(comm_, neutronics_comm);
+  world_to_heat_ = map_comm_ranks(comm_, heat_comm);
+  neutronics_to_world_ = map_comm_ranks(neutronics_comm, comm_);
+  heat_to_world_ = map_comm_ranks(neutronics_comm, comm_);
 
   // Send rank ID of neutronics subcomm root (relative to comm_) to all procs
   neutronics_root_ = this->get_neutronics_driver().comm_.is_root() ? comm_.rank : -1;
@@ -370,7 +372,10 @@ void CoupledDriver::update_heat_source(bool relax)
 
   // The neutronics root sends the cell-averaged heat sources to the heat ranks.
   // Each heat rank gets only the heat sources for its local cells.
-  for (const auto& heat_rank : heat_ranks_) {
+  for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+    if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+      continue;
+    }
     comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
     cell_heat_send.resize({cells_recv.size()});
     if (comm_.rank == neutronics_root_) {
@@ -450,7 +455,10 @@ void CoupledDriver::update_temperature(bool relax)
   decltype(cell_to_glob_cell_) cells_recv;
   decltype(cell_volume_) cell_volumes_recv;
   decltype(cell_temperature_) cell_temperatures_recv;
-  for (const auto& heat_rank : heat_ranks_) {
+  for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+    if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+      continue;
+    }
     comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
     neutronics.comm_.broadcast(cells_recv);
 
@@ -527,15 +535,17 @@ void CoupledDriver::update_density(bool relax)
   decltype(cell_density_) cell_densities_recv;
   decltype(cell_fluid_mask_) cell_fluid_mask_recv;
 
-  for (const auto& heat_rank : heat_ranks_) {
+  for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+    if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+      continue;
+    }
     comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
     neutronics.comm_.broadcast(cells_recv);
 
     comm_.send_and_recv(cell_volumes_recv, neutronics_root_, cell_volume_, heat_rank);
     neutronics.comm_.broadcast(cell_volumes_recv);
 
-    comm_.send_and_recv(
-      cell_densities_recv, neutronics_root_, cell_density_, heat_rank);
+    comm_.send_and_recv(cell_densities_recv, neutronics_root_, cell_density_, heat_rank);
     neutronics.comm_.broadcast(cell_densities_recv);
 
     comm_.send_and_recv(
@@ -573,7 +583,10 @@ void CoupledDriver::init_mapping()
   std::vector<Position> centroids_recv;
   decltype(elem_to_glob_cell_) elem_to_cell_send;
 
-  for (const auto& heat_rank : heat_ranks_) {
+  for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+    if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+      continue;
+    }
     // For the given heat rank, the neutronics root discovers the mapping of
     // local elem ID --> global cell handle.
     // * IMPORTANT: OpenmcDriver::find adds the cell instances it discovers to
@@ -595,7 +608,6 @@ void CoupledDriver::init_mapping()
     // back to the given heat rank.
     this->comm_.send_and_recv(
       elem_to_glob_cell_, heat_rank, elem_to_cell_send, neutronics_root_);
-    comm_.Barrier();
   }
   if (heat.active()) {
     // The heat rank sets the inverse mapping of global cell handle -> local element ID
@@ -645,7 +657,10 @@ void CoupledDriver::init_temperature()
     decltype(cell_to_glob_cell_) cells_recv;
     decltype(cell_temperature_) cell_temperatures_send;
     // The neutronics root sends cell T to each heat rank
-    for (const auto& heat_rank : heat_ranks_) {
+    for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+      if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+        continue;
+      }
       comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
       if (comm_.rank == neutronics_root_) {
         const auto sz = static_cast<unsigned long>(cells_recv.size());
@@ -703,7 +718,10 @@ void CoupledDriver::check_volumes()
   std::map<CellHandle, double> glob_volumes;
 
   // Get all local cell volumes from heat ranks and sum them into the global cell volumes.
-  for (const auto& heat_rank : heat_ranks_) {
+  for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+    if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+      continue;
+    }
     decltype(cell_to_glob_cell_) cells_recv;
     decltype(cell_volume_) cell_volumes_recv;
     comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
@@ -779,7 +797,10 @@ void CoupledDriver::init_density()
   if (density_ic_ == Initial::neutronics) {
     decltype(cell_to_glob_cell_) cells_recv;
     decltype(cell_density_) cell_densities_send;
-    for (const auto& heat_rank : heat_ranks_) {
+    for (int heat_rank = 0; heat_rank < world_to_heat_.size(); ++heat_rank) {
+      if (world_to_heat_[heat_rank] == MPI_PROC_NULL) {
+        continue;
+      }
       comm_.send_and_recv(cells_recv, neutronics_root_, cell_to_glob_cell_, heat_rank);
       if (comm_.rank == neutronics_root_) {
         const auto sz = static_cast<unsigned long>(cells_recv.size());

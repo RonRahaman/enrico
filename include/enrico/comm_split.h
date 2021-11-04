@@ -29,9 +29,6 @@ void get_driver_comms(Comm super_comm,
                       Comm& intranode_comm,
                       Comm& coupling_comm);
 
-//! Gathers the ranks (wrt super) that are also in sub
-std::vector<int> gather_subcomm_ranks(const Comm& super, const Comm& sub);
-
 //! Computes a balanced decomposition of a 1D array.
 //!
 //! This is based on MPE_Decomp1D from MPICH, slightly modified for C++.
@@ -47,6 +44,17 @@ std::vector<int> gather_subcomm_ranks(const Comm& super, const Comm& sub);
 //! \return The starting and ending indices assigned to this rank.
 //!         Start is inclusive, end is non-inclusive.
 std::pair<int, int> decomp_1d(int n, int size, int rank);
+
+//! Discovers map from each rank ID in comm1 to a (possibly NULL) rank ID in comm2
+//!
+//! If comm1 is a supercomm or disjoint from comm2, then the rank IDs from comm1
+//! that are not in comm2 will be mapped to MPI_PROC_NULL.
+//!
+//! \param comm1 The comm whose rank IDs are the keys of the mapping
+//! \param comm2  The comm whose rank IDS are the values of the mapping
+//! \return Vector element i maps rank i from comm1 to a rank ID in comm2.  The size
+//!         is comm1.size().  Valid only on ranks in comm1.
+std::vector<int> map_comm_ranks(const Comm& comm1, const Comm& comm2);
 
 } // namespace enrico
 

@@ -42,8 +42,8 @@ public:
       std::make_unique<SurrogateHeatDriver>(heat_comm.comm, heat_node);
 
     // Discover the ranks that are in each comm
-    neutronics_ranks_ = gather_subcomm_ranks(comm_, neutronics_comm);
-    heat_ranks_ = gather_subcomm_ranks(comm_, heat_comm);
+    neutronics_ranks_ = map_comm_ranks(comm_, neutronics_comm);
+    heat_ranks_ = map_comm_ranks(comm_, heat_comm);
 
     // Send rank of neutronics root to all procs
     neutronics_root_ = this->get_neutronics_driver().comm_.is_root() ? comm_.rank : -1;

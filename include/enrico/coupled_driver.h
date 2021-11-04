@@ -185,11 +185,17 @@ private:
   //! The rank in comm_ that corresponds to the root of the heat comm
   int heat_root_ = MPI_PROC_NULL;
 
-  //! List of ranks in this->comm_ that are in the heat/fluids subcomm
-  std::vector<int> heat_ranks_;
+  //! Maps each rank ID in this->comm_ to a (possibly NULL) rank ID in heat/fluids subcomm
+  std::vector<int> world_to_heat_;
 
-  //! List of ranks in this->comm_ that are in the neutronics subcomm
-  std::vector<int> neutronics_ranks_;
+  //! Maps each rank ID in heat/fluids subcomm to a rank ID in this->comm
+  std::vector<int> heat_to_world_;
+
+  //! Maps each rank ID this->comm_ to a (possibly NULL) rank ID in the neutronics subcomm
+  std::vector<int> world_to_neutronics_;
+
+  //! Maps eacch rank ID in the neutronics subcomm to a rank ID in this->comm_
+  std::vector<int> neutronics_to_world_;
 
   //! Local cell temperature at current Picard iteration. Set only on heat/fluids ranks.
   xt::xtensor<double, 1> cell_temperature_;
